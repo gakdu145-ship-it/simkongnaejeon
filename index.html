@@ -22,7 +22,7 @@
 }
 *,*::before,*::after{box-sizing:inherit}
 html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 64px)}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard Variable",Pretendard,system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard Variable",Pretendard,system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;font-variant-numeric:tabular-nums}
 button,input,select{font:inherit;color:inherit}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
 .sub{color:var(--muted);font-size:12.5px}
@@ -241,11 +241,16 @@ const CONFIG = {
   SHEET_NAME: '',         // 기록 탭 이름. 비우면 첫 번째 탭
   MIN_GAMES: 3,           // 승률·KDA 1위와 조합 분석에 필요한 최소 판수
   FORM_LEN: 10,
+  // 시트에서 이미 계산된 값이라 자동 지표에서 빼는 컬럼 (사이트가 직접 계산)
+  SKIP_COLS: ['kda','킬관여율','킬관여','kp'],
+  // 합계가 아니라 평균으로 1위를 뽑는 컬럼 (이름에 이 단어가 들어가면)
+  AVG_PATTERN: /분당|율|률|%|평균|per/i,
   COLUMNS: {
-    date:   ['날짜','일자','date'],
-    match:  ['경기id','경기번호','경기','게임','match','game','id'],
+    date:   ['경기일자','날짜','일자','매치일자','date'],
+    match:  ['매치id','경기id','매치','경기번호','경기','게임','matchid','match','game','id'],
+    dur:    ['게임시간','경기시간','플레이시간','duration'],
     team:   ['팀','진영','side','team'],
-    player: ['플레이어','닉네임','이름','소환사','player','name'],
+    player: ['소환사명','플레이어','닉네임','이름','소환사','소환사이름','summoner','summonername','riotid','player','name'],
     champ:  ['챔피언','챔프','champion','champ'],
     pos:    ['포지션','라인','position','role','lane'],
     result: ['승패','결과','result','win'],
@@ -255,7 +260,7 @@ const CONFIG = {
   }
 };
 const POS_ORDER = ['탑','정글','미드','원딜','서폿'];
-const POS_ALIAS = {top:'탑',jg:'정글',jug:'정글',jungle:'정글',mid:'미드',middle:'미드',adc:'원딜',bot:'원딜',bottom:'원딜',ad:'원딜',sup:'서폿',support:'서폿',서포터:'서폿',바텀:'원딜',정글러:'정글'};
+const POS_ALIAS = {top:'탑',jg:'정글',jug:'정글',jungle:'정글',mid:'미드',middle:'미드',adc:'원딜',bot:'원딜',bottom:'원딜',ad:'원딜',sup:'서폿',support:'서폿',utility:'서폿',utl:'서폿',서포터:'서폿',바텀:'원딜',정글러:'정글'};
 // 시트에서 줄여 쓰는 챔피언 이름 → 공식 이름
 const CHAMP_ALIAS = {'누누':'누누와 윌럼프','레나타':'레나타 글라스크','문도':'문도 박사','마이':'마스터 이','트페':'트위스티드 페이트','미포':'미스 포츈','블츠':'블리츠크랭크','아우솔':'아우렐리온 솔','자르반':'자르반 4세','케틀':'케이틀린','이렐':'이렐리아','칼리':'칼리스타','하딩':'하이머딩거','말파':'말파이트'};
 
@@ -269,26 +274,28 @@ const store = {
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 /* ---------- 챔피언 아이콘 (Riot Data Dragon) ---------- */
-const ICON = { ver:null, map:{} };
+const ICON = { ver:null, map:{}, names:{} };
 const ckey = s => String(s || '').replace(/[\s.'&]/g,'').toLowerCase();
 async function loadIcons(){
   try{
-    const c = JSON.parse(store.get('ddIcons') || 'null');
-    if(c && Date.now() - c.t < 7*864e5){ ICON.ver = c.ver; ICON.map = c.map; return; }
+    const c = JSON.parse(store.get('ddIcons2') || 'null');
+    if(c && Date.now() - c.t < 7*864e5){ ICON.ver = c.ver; ICON.map = c.map; ICON.names = c.names; return; }
   }catch(e){}
   try{
     const vers = await (await fetch('https://ddragon.leagueoflegends.com/api/versions.json')).json();
     const ver = vers[0];
     const data = await (await fetch(`https://ddragon.leagueoflegends.com/cdn/${ver}/data/ko_KR/champion.json`)).json();
-    const map = {};
-    Object.values(data.data).forEach(ch => { map[ckey(ch.name)] = ch.id; map[ckey(ch.id)] = ch.id; });
-    ICON.ver = ver; ICON.map = map;
-    store.set('ddIcons', JSON.stringify({ ver, map, t:Date.now() }));
+    const map = {}, names = {};
+    Object.values(data.data).forEach(ch => { map[ckey(ch.name)] = ch.id; map[ckey(ch.id)] = ch.id; names[ch.id] = ch.name; });
+    ICON.ver = ver; ICON.map = map; ICON.names = names;
+    store.set('ddIcons2', JSON.stringify({ ver, map, names, t:Date.now() }));
   }catch(e){ /* 아이콘을 못 불러오면 이니셜로 표시 */ }
 }
+const champId = name => { const k = ckey(name); return ICON.map[k] || ICON.map[ckey(CHAMP_ALIAS[name] || CHAMP_ALIAS[k])]; };
+// 시트에 영문(LeeSin, JarvanIV)으로 적혀 있어도 화면에는 한글 이름으로 표시
+const cn = name => ICON.names[champId(name)] || name;
 function ci(name, size=32, cls=''){
-  const k = ckey(name);
-  const id = ICON.map[k] || ICON.map[ckey(CHAMP_ALIAS[name] || CHAMP_ALIAS[k])];
+  const id = champId(name); name = cn(name);
   if(!id || !ICON.ver) return `<span class="ci ${cls}" style="--s:${size}px" title="${esc(name)}">${esc(String(name || '?').slice(0,1))}</span>`;
   return `<img class="ci ${cls}" style="--s:${size}px" src="https://ddragon.leagueoflegends.com/cdn/${ICON.ver}/img/champion/${id}.png" alt="${esc(name)}" title="${esc(name)}" loading="lazy">`;
 }
@@ -320,7 +327,7 @@ function normalize(table){
   const body = table.slice(1);
   const toNum = v => +String(v ?? '').replace(/[,%\s]/g,'');
   const extraCols = table[0].map((h,i) => ({ h:h.trim(), i })).filter(({h,i}) => {
-    if(used.has(i) || !h) return false;
+    if(used.has(i) || !h || CONFIG.SKIP_COLS.includes(h.toLowerCase().replace(/\s/g,''))) return false;
     const vals = body.map(r => (r[i] ?? '').trim()).filter(Boolean);
     return vals.length && vals.filter(v => !isNaN(toNum(v))).length / vals.length >= .8;
   });
@@ -329,6 +336,7 @@ function normalize(table){
     const res = get(r,'result').toLowerCase(), team = get(r,'team').toLowerCase(), posRaw = get(r,'pos');
     return {
       date: get(r,'date'),
+      dur: get(r,'dur'),
       match: get(r,'match') || get(r,'date') || String(Math.floor(i/10)+1),
       team: /레드|red|^r$/.test(team) ? 'red' : 'blue',
       player: get(r,'player'),
@@ -376,6 +384,8 @@ function demoData(){
 const kda = (k,d,a) => (k+a) / Math.max(d,1);
 const pct = (w,g) => g ? w/g*100 : 0;
 const fmt1 = v => v.toLocaleString('ko-KR', { maximumFractionDigits:1 });
+// '48:35:00'처럼 시:분:초로 들어간 값도 '48분 35초'로 표시
+const durText = v => { const p = String(v).split(':').map(Number); if(p.length < 2 || p.some(isNaN)) return v; const [m,s] = p.length === 3 && p[0] >= 10 ? [p[0],p[1]] : p.length === 3 ? [p[0]*60+p[1],p[2]] : p; return `${m}분 ${String(s).padStart(2,'0')}초`; };
 const kdaCls = v => v >= 5 ? 'kda-great' : v >= 3 ? 'kda-good' : '';
 let ORDER = [], MATCHES = [];
 
@@ -385,7 +395,7 @@ function buildMatches(){
   ORDER = [...seen.entries()].sort((a,b) => (a[1] > b[1] ? 1 : a[1] < b[1] ? -1 : 0) || String(a[0]).localeCompare(String(b[0]),'ko',{numeric:true})).map(e => e[0]);
   const map = {};
   state.rows.forEach(r => {
-    const m = map[r.match] ||= { id:r.match, date:r.date, blue:[], red:[], winner:null };
+    const m = map[r.match] ||= { id:r.match, date:r.date, dur:r.dur, blue:[], red:[], winner:null };
     m[r.team].push(r); if(r.win) m.winner = r.team;
   });
   const pi = p => { const i = POS_ORDER.indexOf(p); return i < 0 ? 99 : i; };
@@ -450,7 +460,9 @@ function renderLeaders(list){
     { label:'데스', v:p=>p.d, sub:p=>avg(p,p.d) },
     { label:'어시스트', v:p=>p.a, sub:p=>avg(p,p.a) },
     { label:'킬관여', v:p=>p.kpAvg, show:v=>v.toFixed(0)+'%', min:true, sub:p=>`${p.g}전 평균` },
-    ...state.extraCols.map(h => ({ label:h, v:p=>p.extra[h] || 0, sub:p=>avg(p,p.extra[h] || 0) }))
+    ...state.extraCols.map(h => CONFIG.AVG_PATTERN.test(h)
+      ? { label:h, v:p=>(p.extra[h] || 0)/p.g, show:v=>fmt1(v), min:true, sub:p=>`${p.g}전 평균` }
+      : { label:h, v:p=>p.extra[h] || 0, sub:p=>avg(p,p.extra[h] || 0) })
   ];
   return `<div class="leaders">${cats.map(c => {
     let pool = c.min ? list.filter(p => p.g >= CONFIG.MIN_GAMES) : list; if(!pool.length) pool = list;
@@ -494,7 +506,7 @@ function matchBand(r){
   const team = t => `<div>${m[t].map(x => `<span class="${x.player===r.player?'me':''}">${ci(x.champ,16)}${esc(x.player)}</span>`).join('')}</div>`;
   return `<div class="mrow ${r.win?'win':'loss'}">
     <div class="m-res"><b>${r.win?'승리':'패배'}</b><span class="sub">${esc(r.date)}</span><br><span class="sub">${mine==='blue'?'블루':'레드'} 진영</span></div>
-    <div class="m-champ"><span class="av">${ci(r.champ,48)}<span class="lv">${esc(r.pos)}</span></span><span class="cn hide-m">${esc(r.champ)}</span></div>
+    <div class="m-champ"><span class="av">${ci(r.champ,48)}<span class="lv">${esc(r.pos)}</span></span><span class="cn hide-m">${esc(cn(r.champ))}</span></div>
     <div><div class="kda-big">${r.k} / <em>${r.d}</em> / ${r.a}</div><span class="sub ${kdaCls(kd)}">${kd.toFixed(2)} KDA</span></div>
     <div class="sub">킬관여 ${r.kp.toFixed(0)}%<br>${r.mvp?'<span class="badge mvp">MVP</span>':r.ace?'<span class="badge ace">ACE</span>':''}</div>
     <div class="m-teams">${team(mine)}${team(other)}</div>
@@ -533,7 +545,7 @@ function renderProfile(){
     <div class="prof">
       <div class="side-col">
         <section class="box"><div class="box-h"><h3>챔피언</h3><span class="sub">${p.champList.length}개</span></div>
-          ${p.champList.map(c=>`<div class="list-row">${ci(c.name,32)}<span class="nm">${esc(c.name)}<br><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></span><span class="sub">${c.g}전</span><span class="strong ${c.rate>=60?'w':c.rate<40?'l':''}">${c.rate.toFixed(0)}%</span></div>`).join('')}
+          ${p.champList.map(c=>`<div class="list-row">${ci(c.name,32)}<span class="nm">${esc(cn(c.name))}<br><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></span><span class="sub">${c.g}전</span><span class="strong ${c.rate>=60?'w':c.rate<40?'l':''}">${c.rate.toFixed(0)}%</span></div>`).join('')}
         </section>
         <section class="box"><div class="box-h"><h3>포지션</h3></div><div style="padding:6px 0">${posBars}</div></section>
         <section class="box"><div class="box-h"><h3>같은 팀일 때</h3><span class="sub">승률 순</span></div>
@@ -555,13 +567,13 @@ function renderChamps(){
   const q = state.champQ.trim();
   const sorters = { picks:(a,b)=>b.g-a.g||b.rate-a.rate, rate:(a,b)=>b.rate-a.rate||b.g-a.g, kda:(a,b)=>b.kda-a.kda };
   const list = Object.values(map).map(c => ({ ...c, rate:pct(c.w,c.g), kda:kda(c.k,c.d,c.a), pr:pct(c.g,total),
-    top:Object.entries(c.users).sort((a,b)=>b[1].g-a[1].g||b[1].w-a[1].w)[0] })).filter(c => !q || c.name.includes(q)).sort(sorters[state.cSort]);
+    top:Object.entries(c.users).sort((a,b)=>b[1].g-a[1].g||b[1].w-a[1].w)[0] })).filter(c => !q || cn(c.name).includes(q) || c.name.toLowerCase().includes(q.toLowerCase())).sort(sorters[state.cSort]);
   return `<div class="toolbar">${posSeg()}<span class="spacer"></span><input type="search" id="champQ" placeholder="챔피언 검색" value="${esc(state.champQ)}"></div>
     <div class="box scroll">${list.length ? `<table>
       <thead><tr><th class="rank">#</th><th>챔피언</th>${th('rate','승률',state.cSort)}${th('picks','픽',state.cSort,'r')}<th class="r hide-m">픽률</th>${th('kda','KDA',state.cSort,'r')}<th class="hide-m">장인</th></tr></thead>
       <tbody>${list.map((c,i) => `<tr>
         <td class="rank">${i+1}</td>
-        <td><div class="who">${ci(c.name,34)}${esc(c.name)}</div></td>
+        <td><div class="who">${ci(c.name,34)}${esc(cn(c.name))}</div></td>
         <td>${rateBar(c.w,c.g)}</td>
         <td class="r strong">${c.g}</td>
         <td class="r hide-m sub">${c.pr.toFixed(0)}%</td>
@@ -577,14 +589,14 @@ function renderMatches(){
   const list = [...MATCHES].reverse().filter(m => !sel || [...m.blue,...m.red].some(r=>r.player===sel));
   const team = (m,t) => `<div class="team ${m.winner===t?'won':'lost'}">
       <div class="team-t"><span>${m.winner===t?'승리':'패배'} (${t==='blue'?'블루':'레드'})</span><span>${m[t+'Kills']}킬</span></div>
-      ${m[t].map(r => `<div class="prow">${ci(r.champ,28)}<span class="nm" data-go="${esc(r.player)}" style="${r.player===sel?'color:var(--accent)':''}">${esc(r.player)}<small>${esc(r.pos)}, ${esc(r.champ)}</small></span>
+      ${m[t].map(r => `<div class="prow">${ci(r.champ,28)}<span class="nm" data-go="${esc(r.player)}" style="${r.player===sel?'color:var(--accent)':''}">${esc(r.player)}<small>${esc(r.pos)}, ${esc(cn(r.champ))}</small></span>
         <span class="r"><b>${r.k}/<span class="l">${r.d}</span>/${r.a}</b><br><span class="sub ${kdaCls(kda(r.k,r.d,r.a))}">${kda(r.k,r.d,r.a).toFixed(2)}</span></span>
         <span class="r sub">${r.kp.toFixed(0)}%</span>
         <span>${r.mvp?'<span class="badge mvp">MVP</span>':r.ace?'<span class="badge ace">ACE</span>':''}</span></div>`).join('')}
     </div>`;
   return `<div class="toolbar"><select id="matchPlayer"><option value="">모든 플레이어</option>${names.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')}</select><span class="sub">${list.length}경기</span></div>
     <div class="mlist">${list.map(m => `<article class="box game">
-      <div class="game-h"><span class="res ${m.winner==='blue'?'w':'l'}">${m.winner==='blue'?'블루':'레드'} 승리</span><span class="sub">${esc(m.date)}</span><span class="spacer"></span><span class="sub">${esc(m.id)}</span><span class="strong"><span class="w">${m.blueKills}</span> : <span class="l">${m.redKills}</span></span></div>
+      <div class="game-h"><span class="res ${m.winner==='blue'?'w':'l'}">${m.winner==='blue'?'블루':'레드'} 승리</span><span class="sub">${esc(m.date)}</span>${m.dur?`<span class="sub">${esc(durText(m.dur))}</span>`:""}<span class="spacer"></span><span class="sub">${esc(m.id)}</span><span class="strong"><span class="w">${m.blueKills}</span> : <span class="l">${m.redKills}</span></span></div>
       <div class="game-b">${team(m,'blue')}${team(m,'red')}</div>
     </article>`).join('') || '<div class="box empty">표시할 경기가 없어요.</div>'}</div>`;
 }
@@ -641,7 +653,14 @@ async function load(){
       const res = await fetch(url + (url.includes('?')?'&':'?') + 't=' + Date.now());
       if(!res.ok) throw new Error(`시트를 불러오지 못했어요 (HTTP ${res.status}). 시트 공유가 '링크가 있는 모든 사용자'로 되어 있는지 확인하세요.`);
       state.rows = normalize(parseCSV(await res.text())); setNotice('');
-    }catch(e){ state.rows = []; setNotice(esc(e.message), true); }
+    }catch(e){
+      state.rows = [];
+      const msg = e instanceof TypeError
+        ? `시트에 접속하지 못했어요. 대부분 시트 공유가 '제한됨'이라 구글이 로그인 페이지로 돌려보내서 생겨요. <a href="${esc(url)}" target="_blank" rel="noopener">이 주소</a>를 시크릿 창에서 열어 표 내용이 보이는지 확인해 주세요.`
+        : esc(e.message);
+      setNotice(msg, true);
+      console.error('[내전 기록] 시트 요청 실패:', url, e);
+    }
   }
   buildMatches(); render();
   await icons; render();
