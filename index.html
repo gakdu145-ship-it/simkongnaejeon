@@ -139,8 +139,16 @@ tbody tr.row:hover td{background:var(--surface2)}
 .hero-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
 .pos-chip{font-size:11.5px;padding:1px 7px;border-radius:4px;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
 
-.accts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.accts{margin-top:6px}
+.acct-toggle{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--surface2);border-radius:999px;padding:2px 10px;font-size:12px;color:var(--muted);cursor:pointer}
+.acct-toggle:hover{color:var(--ink)}
+.acct-toggle svg{width:12px;height:12px;transition:transform .15s}
+.acct-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.acct-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;max-width:560px}
 .acct{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line)}
+
+.tag{color:var(--muted);font-weight:400;font-size:.8em;opacity:.75;margin-left:3px;letter-spacing:0}
+h1 .tag{font-size:.62em}
 
 /* 프로필: 요약 */
 .sum{padding:12px;margin-bottom:12px}
@@ -313,7 +321,7 @@ const POS_ALIAS = {top:'탑',jg:'정글',jug:'정글',jungle:'정글',mid:'미�
 const CHAMP_ALIAS = {'누누':'누누와 윌럼프','레나타':'레나타 글라스크','문도':'문도 박사','마이':'마스터 이','트페':'트위스티드 페이트','미포':'미스 포츈','블츠':'블리츠크랭크','아우솔':'아우렐리온 솔','자르반':'자르반 4세','케틀':'케이틀린','이렐':'이렐리아','칼리':'칼리스타','하딩':'하이머딩거','말파':'말파이트'};
 
 /* ---------- 상태 ---------- */
-const state = { rows:[], extraCols:[], tab:'rank', player:null, pos:'all', pSort:'rate', cSort:'picks', minOnly:false, champQ:'', demo:false, range:'all', pChamp:'', open:new Set() };
+const state = { rows:[], extraCols:[], tab:'rank', player:null, pos:'all', pSort:'rate', cSort:'picks', minOnly:false, champQ:'', demo:false, range:'all', pChamp:'', open:new Set(), showAccts:false };
 const $ = s => document.querySelector(s);
 const store = {
   get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
@@ -412,9 +420,9 @@ function normalize(table){
 /* ---------- 표시 이름 ----------
    키(디스코드 ID 또는 소환사명) → 화면 이름. 디스코드 닉네임이 있으면 가장 최근 경기의 닉네임,
    없으면 가장 많이 쓴 소환사명. ACCOUNTS에는 그 유저가 쓴 롤 계정들이 판수와 함께 들어가요 */
-let NAMES = {}, ACCOUNTS = {};
+let NAMES = {}, ACCOUNTS = {}, REG = new Set();
 function buildNames(){
-  NAMES = {}; ACCOUNTS = {};
+  NAMES = {}; ACCOUNTS = {}; REG = new Set();
   const disc = {};
   state.rows.forEach(r => {   // rows는 buildMatches 이후 경기 순서(idx)를 가짐
     const acc = ACCOUNTS[r.player] ||= {};
@@ -425,10 +433,13 @@ function buildNames(){
     const top = Object.entries(ACCOUNTS[k]).sort((a,b)=>b[1]-a[1])[0];
     // 디스코드 미등록이면 소환사명에서 #태그를 뗀 이름으로 표시 (Labile#0615 → Labile)
     NAMES[k] = disc[k]?.n || noTag(top?.[0] || k);
+    if(disc[k]) REG.add(k);
   });
 }
 const noTag = n => String(n).replace(/\s*#[^#]*$/,'').trim() || n;
 const dn = k => NAMES[k] || noTag(k);
+// 'Labile#0615' → Labile + 연한 #0615 (HTML 반환)
+const tagged = n => { const m = String(n).match(/^(.*?)\s*(#[^#]*)$/); return m && m[1] ? `${esc(m[1])}<span class="tag">${esc(m[2])}</span>` : esc(n); };
 const accountsOf = k => Object.entries(ACCOUNTS[k] || {}).sort((a,b)=>b[1]-a[1]);
 
 /* ---------- 예시 데이터 ---------- */
@@ -628,7 +639,7 @@ function statChips(r){
 function matchDetail(m, me){
   const cols = state.extraCols.filter(h => !CONFIG.AVG_PATTERN.test(h)).slice(0,4);
   const row = r => `<tr class="${r.player===me?'me':''} ${r.win?'tw':'tl'}">
-    <td><div class="who" style="font-weight:600">${ci(r.champ,24)}<span class="nm" data-go="${esc(r.player)}" style="cursor:pointer">${esc(dn(r.player))}${r.summoner && r.summoner !== dn(r.player) ? ` <span class="sub">${esc(r.summoner)}</span>` : ''}</span></div></td>
+    <td><div class="who" style="font-weight:600">${ci(r.champ,24)}<span class="nm" data-go="${esc(r.player)}" style="cursor:pointer">${esc(dn(r.player))}${REG.has(r.player) && r.summoner ? ` <span class="sub">${tagged(r.summoner)}</span>` : ''}</span></div></td>
     <td class="sub">${esc(r.pos)}</td>
     <td class="r"><span class="pill sm ${scCls(r.score)}">${r.score}</span> <span class="sub">${r.place}등</span></td>
     <td class="r"><b>${r.k}/<span class="l">${r.d}</span>/${r.a}</b> <span class="sub">${kda(r.k,r.d,r.a).toFixed(2)}</span></td>
@@ -663,7 +674,7 @@ function suggestions(q){
   const hits = k ? all.filter(p => dn(p.name).toLowerCase().includes(k) || via(p)) : all;
   if(!hits.length) return `<div class="empty" style="padding:16px">'${esc(q)}' 소환사를 찾지 못했어요.</div>`;
   const hl = n => { if(!k) return esc(n); const i = n.toLowerCase().indexOf(k); if(i < 0) return esc(n); return esc(n.slice(0,i)) + '<mark>' + esc(n.slice(i,i+k.length)) + '</mark>' + esc(n.slice(i+k.length)); };
-  return hits.map((p,i) => `<button data-go="${esc(p.name)}" class="${i===0&&k?'act':''}">${ci(p.main,28,'round')}<span class="nm">${hl(dn(p.name))}${k && !dn(p.name).toLowerCase().includes(k) && via(p) ? ` <span class="sub">${hl(via(p))}</span>` : ''}</span><span class="sub">${p.g}전 ${p.w}승 ${p.rate.toFixed(0)}%</span></button>`).join('');
+  return hits.map((p,i) => `<button data-go="${esc(p.name)}" class="${i===0&&k?'act':''}">${ci(p.main,28,'round')}<span class="nm">${hl(dn(p.name))}${k && !dn(p.name).toLowerCase().includes(k) && via(p) ? ` <span class="sub">${tagged(via(p))}</span>` : ''}</span><span class="sub">${p.g}전 ${p.w}승 ${p.rate.toFixed(0)}%</span></button>`).join('');
 }
 function renderProfile(){
   const all = allPlayers().sort((a,b)=>b.g-a.g);
@@ -717,9 +728,10 @@ function renderProfile(){
   return search + `
     <section class="box hero">
       <span class="av">${ci(P.main, 72)}<span class="lv">${rank>=0?`${rank+1}위`:`${P.g}전`}</span></span>
-      <div><h1>${esc(dn(P.name))}</h1>
+      <div><h1>${REG.has(P.name) ? esc(dn(P.name)) : tagged(accountsOf(P.name)[0]?.[0] || P.name)}</h1>
         <div class="sub">${P.g}전 ${P.w}승 ${P.g-P.w}패, 승률 ${P.rate.toFixed(0)}%, 최장 ${P.streak}연승</div>
-        ${accountsOf(P.name).length ? `<div class="accts"><span class="sub">롤 계정</span>${accountsOf(P.name).map(([a,n])=>`<span class="acct">${esc(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}
+        ${accountsOf(P.name).length > 1 ? `<div class="accts"><button class="acct-toggle" data-accts aria-expanded="${state.showAccts}">롤 계정 ${accountsOf(P.name).length}개 ${ICON_DOWN}</button>
+          ${state.showAccts ? `<div class="acct-list">${accountsOf(P.name).map(([a,n])=>`<span class="acct">${tagged(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}</div>` : ''}
         <div class="hero-meta">${POS_ORDER.filter(x=>P.pos[x]).sort((a,b)=>P.pos[b].g-P.pos[a].g).slice(0,2).map(x=>`<span class="pos-chip">${x}</span>`).join('')}</div>
       </div>
     </section>
@@ -839,7 +851,8 @@ document.addEventListener('click', e => {
   const t = e.target;
   const tab = t.closest('nav button'); if(tab){ state.tab = tab.dataset.tab; render(); window.scrollTo(0,0); return; }
   const om = t.closest('[data-open-match]'); if(om){ const id = om.dataset.openMatch; state.open.has(id) ? state.open.delete(id) : state.open.add(id); render(); return; }
-  const go = t.closest('[data-go]'); if(go){ if(state.player !== go.dataset.go){ state.pChamp = ''; state.open.clear(); } state.player = go.dataset.go; state.tab = 'profile'; render(); window.scrollTo(0,0); return; }
+  const go = t.closest('[data-go]'); if(go){ if(state.player !== go.dataset.go){ state.pChamp = ''; state.open.clear(); state.showAccts = false; } state.player = go.dataset.go; state.tab = 'profile'; render(); window.scrollTo(0,0); return; }
+  if(t.closest('[data-accts]')){ state.showAccts = !state.showAccts; render(); return; }
   const rg = t.closest('[data-range]'); if(rg){ state.range = rg.dataset.range; render(); return; }
   if(!t.closest('.psearch')) $('#psug')?.classList.remove('on');
   const pos = t.closest('[data-pos]'); if(pos){ state.pos = pos.dataset.pos; render(); return; }
