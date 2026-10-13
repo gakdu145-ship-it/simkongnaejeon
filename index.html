@@ -139,6 +139,9 @@ tbody tr.row:hover td{background:var(--surface2)}
 .hero-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
 .pos-chip{font-size:11.5px;padding:1px 7px;border-radius:4px;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
 
+.accts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px}
+.acct{font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line)}
+
 /* 프로필: 요약 */
 .sum{padding:12px;margin-bottom:12px}
 .sum-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
@@ -293,6 +296,8 @@ const CONFIG = {
     match:  ['매치id','경기id','매치','경기번호','경기','게임','matchid','match','game','id'],
     dur:    ['게임시간','경기시간','플레이시간','duration'],
     team:   ['팀','진영','side','team'],
+    discordName: ['디스코드닉네임','디스코드이름','discordnickname','discordname'],
+    discordId:   ['디스코드id','디스코드고유id','discordid','discorduid'],
     player: ['소환사명','플레이어','닉네임','이름','소환사','소환사이름','summoner','summonername','riotid','player','name'],
     champ:  ['챔피언','챔프','champion','champ'],
     pos:    ['포지션','라인','position','role','lane'],
@@ -364,6 +369,9 @@ function normalize(table){
     idx[key] = head.findIndex(h => aliases.includes(h));
     if(idx[key] < 0 && ['player','result'].includes(key)) missing.push(aliases[0]);
   }
+  // 헤더 이름으로 못 찾으면 시트 구조대로 T열(19) = 디스코드 닉네임, U열(20) = 디스코드 ID
+  if(idx.discordName < 0 && table[0].length > 19) idx.discordName = 19;
+  if(idx.discordId < 0 && table[0].length > 20) idx.discordId = 20;
   if(missing.length) throw new Error(`필수 컬럼을 찾지 못했어요: ${missing.join(', ')}. 시트의 첫 행 이름을 확인하세요.`);
   const get = (r,k) => idx[k] >= 0 ? (r[idx[k]] ?? '').trim() : '';
   const used = new Set(Object.values(idx).filter(i => i >= 0));
@@ -375,14 +383,17 @@ function normalize(table){
     return vals.length && vals.filter(v => !isNaN(toNum(v))).length / vals.length >= .8;
   });
   state.extraCols = extraCols.map(c => c.h);
-  return body.map((r,i) => {
+  const rows = body.map((r,i) => {
     const res = get(r,'result').toLowerCase(), team = get(r,'team').toLowerCase(), posRaw = get(r,'pos');
     return {
       date: get(r,'date'),
       dur: get(r,'dur'),
       match: get(r,'match') || get(r,'date') || String(Math.floor(i/10)+1),
       team: /레드|red|^r$/.test(team) ? 'red' : 'blue',
-      player: get(r,'player'),
+      // 유저 식별 키: 디스코드 ID 우선, 미등록이면 롤 소환사명으로 임시 구분
+      player: get(r,'discordId') || get(r,'player'),
+      summoner: get(r,'player'),
+      discordName: get(r,'discordName'),
       champ: get(r,'champ') || '?',
       pos: POS_ALIAS[posRaw.toLowerCase()] || posRaw || '?',
       win: ['승','승리','w','win','1','true','o'].includes(res),
@@ -390,7 +401,35 @@ function normalize(table){
       extra: Object.fromEntries(extraCols.map(({h,i}) => [h, toNum(r[i]) || 0]))
     };
   }).filter(r => r.player);
+  // 등록 전 경기 보정: ID가 빈 행이라도 같은 소환사명이 다른 경기에서 하나의 디스코드 ID와
+  // 연결돼 있으면 그 ID로 합쳐요 (등록 전/후 전적이 두 사람으로 갈라지지 않게)
+  const link = {};
+  rows.forEach(r => { if(r.player !== r.summoner) (link[r.summoner] ||= new Set()).add(r.player); });
+  rows.forEach(r => { if(r.player === r.summoner && link[r.summoner]?.size === 1) r.player = [...link[r.summoner]][0]; });
+  return rows;
 }
+
+/* ---------- 표시 이름 ----------
+   키(디스코드 ID 또는 소환사명) → 화면 이름. 디스코드 닉네임이 있으면 가장 최근 경기의 닉네임,
+   없으면 가장 많이 쓴 소환사명. ACCOUNTS에는 그 유저가 쓴 롤 계정들이 판수와 함께 들어가요 */
+let NAMES = {}, ACCOUNTS = {};
+function buildNames(){
+  NAMES = {}; ACCOUNTS = {};
+  const disc = {};
+  state.rows.forEach(r => {   // rows는 buildMatches 이후 경기 순서(idx)를 가짐
+    const acc = ACCOUNTS[r.player] ||= {};
+    if(r.summoner) acc[r.summoner] = (acc[r.summoner] || 0) + 1;
+    if(r.discordName && (!disc[r.player] || (r.idx ?? 0) >= disc[r.player].i)) disc[r.player] = { n:r.discordName, i:r.idx ?? 0 };
+  });
+  Object.keys(ACCOUNTS).forEach(k => {
+    const top = Object.entries(ACCOUNTS[k]).sort((a,b)=>b[1]-a[1])[0];
+    // 디스코드 미등록이면 소환사명에서 #태그를 뗀 이름으로 표시 (Labile#0615 → Labile)
+    NAMES[k] = disc[k]?.n || noTag(top?.[0] || k);
+  });
+}
+const noTag = n => String(n).replace(/\s*#[^#]*$/,'').trim() || n;
+const dn = k => NAMES[k] || noTag(k);
+const accountsOf = k => Object.entries(ACCOUNTS[k] || {}).sort((a,b)=>b[1]-a[1]);
 
 /* ---------- 예시 데이터 ---------- */
 function demoData(){
@@ -414,7 +453,7 @@ function demoData(){
     const blueWin = rnd() < .5 + (blue.reduce((s,p)=>s+skill[p],0) - red.reduce((s,p)=>s+skill[p],0))*.25;
     [[blue,'blue',blueWin],[red,'red',!blueWin]].forEach(([team,side,win]) => team.forEach((p,i) => {
       const pos = POS_ORDER[i];
-      rows.push({ date, match:`G${String(g).padStart(3,'0')}`, team:side, player:p, champ:pick(champs[pos]), pos, win,
+      rows.push({ date, match:`G${String(g).padStart(3,'0')}`, team:side, player:p, summoner:p, champ:pick(champs[pos]), pos, win,
         k:Math.floor(rnd()*(win?11:7)), d:Math.floor(rnd()*(win?5:9)), a:Math.floor(rnd()*(pos==='서폿'?16:10)),
         extra:{ '딜량':Math.floor(8000+rnd()*25000), 'CS':pos==='서폿'?Math.floor(rnd()*40):Math.floor(120+rnd()*160), '시야점수':Math.floor(10+rnd()*(pos==='서폿'?70:30)) } });
     }));
@@ -539,9 +578,9 @@ function renderLeaders(list){
     const best = Math.max(...pool.map(c.v)); if(!(best > 0)) return '';
     const tops = pool.filter(p => c.v(p) === best).sort((a,b)=>b.g-a.g), p = tops[0];
     const sub = [c.sub ? c.sub(p) : '', tops.length > 1 ? `공동 ${tops.length}명` : ''].filter(Boolean).join(', ');
-    return `<button class="leader" data-go="${esc(p.name)}" title="${esc(tops.map(t=>t.name).join(', '))}">
+    return `<button class="leader" data-go="${esc(p.name)}" title="${esc(tops.map(t=>dn(t.name)).join(', '))}">
       ${ci(p.main, 40, 'round')}
-      <span class="leader-t"><span class="leader-label">${esc(c.label)}</span><span class="leader-name" style="display:block">${esc(p.name)}</span>
+      <span class="leader-t"><span class="leader-label">${esc(c.label)}</span><span class="leader-name" style="display:block">${esc(dn(p.name))}</span>
       <span class="leader-val">${c.show ? c.show(best) : num(best) + (c.unit || '')}</span> ${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</span>
     </button>`;
   }).join('')}</div>`;
@@ -554,7 +593,7 @@ function renderRank(){
   const rows = (state.minOnly ? list.filter(p => p.g >= CONFIG.MIN_GAMES) : list).sort(sorters[state.pSort]);
   const body = rows.map((p,i) => `<tr class="row" data-go="${esc(p.name)}">
       <td class="rank t${i+1}">${i+1}</td>
-      <td><div class="who">${ci(p.main, 34, 'round')}<span>${esc(p.name)}<br><span class="sub">${esc(p.mainPos || '')}</span></span></div></td>
+      <td><div class="who">${ci(p.main, 34, 'round')}<span>${esc(dn(p.name))}<br><span class="sub">${esc(p.mainPos || '')}</span></span></div></td>
       <td>${rateBar(p.w, p.g)}</td>
       <td class="r"><span class="strong ${kdaCls(p.kda)}">${p.kda.toFixed(2)}</span><br><span class="sub">${fmt1(p.k/p.g)} / ${fmt1(p.d/p.g)} / ${fmt1(p.a/p.g)}</span></td>
       <td class="r"><span class="pill sm ${scCls(p.score)}">${p.score.toFixed(0)}</span></td>
@@ -589,7 +628,7 @@ function statChips(r){
 function matchDetail(m, me){
   const cols = state.extraCols.filter(h => !CONFIG.AVG_PATTERN.test(h)).slice(0,4);
   const row = r => `<tr class="${r.player===me?'me':''} ${r.win?'tw':'tl'}">
-    <td><div class="who" style="font-weight:600">${ci(r.champ,24)}<span class="nm" data-go="${esc(r.player)}" style="cursor:pointer">${esc(r.player)}</span></div></td>
+    <td><div class="who" style="font-weight:600">${ci(r.champ,24)}<span class="nm" data-go="${esc(r.player)}" style="cursor:pointer">${esc(dn(r.player))}${r.summoner && r.summoner !== dn(r.player) ? ` <span class="sub">${esc(r.summoner)}</span>` : ''}</span></div></td>
     <td class="sub">${esc(r.pos)}</td>
     <td class="r"><span class="pill sm ${scCls(r.score)}">${r.score}</span> <span class="sub">${r.place}등</span></td>
     <td class="r"><b>${r.k}/<span class="l">${r.d}</span>/${r.a}</b> <span class="sub">${kda(r.k,r.d,r.a).toFixed(2)}</span></td>
@@ -600,7 +639,7 @@ function matchDetail(m, me){
 }
 function matchBand(r){
   const m = MATCHES[r.idx], kd = kda(r.k,r.d,r.a), open = state.open.has(m.id);
-  const team = t => `<div>${m[t].map(x => `<span class="${x.player===r.player?'me':''}" data-go="${esc(x.player)}">${ci(x.champ,16)}<em>${esc(x.player)}</em></span>`).join('')}</div>`;
+  const team = t => `<div>${m[t].map(x => `<span class="${x.player===r.player?'me':''}" data-go="${esc(x.player)}">${ci(x.champ,16)}<em>${esc(dn(x.player))}</em></span>`).join('')}</div>`;
   return `<div class="mrow ${r.win?'win':'loss'}">
     <div class="m-meta"><span class="q">내전</span><span>${esc(ago(r.date))}</span><hr><span class="res">${r.win?'승리':'패배'}${m.dur?` ${esc(durShort(m.dur))}`:''}</span><span>${r.team==='blue'?'블루':'레드'} 진영</span></div>
     <div class="m-main">
@@ -619,10 +658,12 @@ const searchBox = (cls='') => `<div class="psearch ${cls}">${ICON_SEARCH}<input 
 function suggestions(q){
   const all = allPlayers().sort((a,b)=>b.g-a.g);
   const k = q.trim().toLowerCase();
-  const hits = k ? all.filter(p => p.name.toLowerCase().includes(k)) : all;
+  // 디스코드 닉네임뿐 아니라 그 유저가 쓴 롤 소환사명으로도 검색돼요
+  const via = p => accountsOf(p.name).map(a=>a[0]).find(a => a.toLowerCase().includes(k) && a !== dn(p.name));
+  const hits = k ? all.filter(p => dn(p.name).toLowerCase().includes(k) || via(p)) : all;
   if(!hits.length) return `<div class="empty" style="padding:16px">'${esc(q)}' 소환사를 찾지 못했어요.</div>`;
-  const hl = n => { if(!k) return esc(n); const i = n.toLowerCase().indexOf(k); return esc(n.slice(0,i)) + '<mark>' + esc(n.slice(i,i+k.length)) + '</mark>' + esc(n.slice(i+k.length)); };
-  return hits.map((p,i) => `<button data-go="${esc(p.name)}" class="${i===0&&k?'act':''}">${ci(p.main,28,'round')}<span class="nm">${hl(p.name)}</span><span class="sub">${p.g}전 ${p.w}승 ${p.rate.toFixed(0)}%</span></button>`).join('');
+  const hl = n => { if(!k) return esc(n); const i = n.toLowerCase().indexOf(k); if(i < 0) return esc(n); return esc(n.slice(0,i)) + '<mark>' + esc(n.slice(i,i+k.length)) + '</mark>' + esc(n.slice(i+k.length)); };
+  return hits.map((p,i) => `<button data-go="${esc(p.name)}" class="${i===0&&k?'act':''}">${ci(p.main,28,'round')}<span class="nm">${hl(dn(p.name))}${k && !dn(p.name).toLowerCase().includes(k) && via(p) ? ` <span class="sub">${hl(via(p))}</span>` : ''}</span><span class="sub">${p.g}전 ${p.w}승 ${p.rate.toFixed(0)}%</span></button>`).join('');
 }
 function renderProfile(){
   const all = allPlayers().sort((a,b)=>b.g-a.g);
@@ -645,9 +686,10 @@ function renderProfile(){
   // 같은 팀으로 DUO_MIN판 이상 함께한 사람 중에서 뽑고, 후보가 부족하면 전체에서 뽑아요
   let pool = Object.entries(duo).map(([n,v])=>({n,...v,rate:pct(v.w,v.g)}));
   if(pool.filter(d=>d.g>=CONFIG.DUO_MIN).length >= 3) pool = pool.filter(d=>d.g>=CONFIG.DUO_MIN);
-  const bestDuo = [...pool].sort((a,b)=>b.rate-a.rate||b.g-a.g).slice(0,3);
-  const worstDuo = [...pool].filter(d=>!bestDuo.includes(d)).sort((a,b)=>a.rate-b.rate||b.g-a.g).slice(0,3);
-  const comboList = (arr, good) => arr.length ? arr.map((d,i)=>`<div class="combo"><span class="no">${i+1}</span>${ci(mainOf[d.n],30,'round')}<span class="nm" data-go="${esc(d.n)}">${esc(d.n)}</span><span class="rt" style="color:${rateColor(d.rate)}">${d.rate.toFixed(0)}%<small>${d.g}전 ${d.w}승 ${d.g-d.w}패</small></span></div>`).join('') : '<div class="empty">함께한 기록이 더 쌓이면 보여요.</div>';
+  // 순서가 아니라 승률로 분류: 50% 초과는 잘 맞는 조합, 50% 미만은 안 맞는 조합, 딱 50%는 제외
+  const bestDuo = pool.filter(d=>d.rate>50).sort((a,b)=>b.rate-a.rate||b.g-a.g).slice(0,3);
+  const worstDuo = pool.filter(d=>d.rate<50).sort((a,b)=>a.rate-b.rate||b.g-a.g).slice(0,3);
+  const comboList = (arr, good) => arr.length ? arr.map((d,i)=>`<div class="combo"><span class="no">${i+1}</span>${ci(mainOf[d.n],30,'round')}<span class="nm" data-go="${esc(d.n)}">${esc(dn(d.n))}</span><span class="rt" style="color:${rateColor(d.rate)}">${d.rate.toFixed(0)}%<small>${d.g}전 ${d.w}승 ${d.g-d.w}패</small></span></div>`).join('') : `<div class="empty">${good?'같은 팀 승률이 50%를 넘는':'같은 팀 승률이 50% 미만인'} 조합이 아직 없어요.</div>`;
 
   let summary = '<div class="empty">조건에 맞는 경기가 없어요.</div>';
   if(S){
@@ -675,8 +717,9 @@ function renderProfile(){
   return search + `
     <section class="box hero">
       <span class="av">${ci(P.main, 72)}<span class="lv">${rank>=0?`${rank+1}위`:`${P.g}전`}</span></span>
-      <div><h1>${esc(P.name)}</h1>
+      <div><h1>${esc(dn(P.name))}</h1>
         <div class="sub">${P.g}전 ${P.w}승 ${P.g-P.w}패, 승률 ${P.rate.toFixed(0)}%, 최장 ${P.streak}연승</div>
+        ${accountsOf(P.name).length ? `<div class="accts"><span class="sub">롤 계정</span>${accountsOf(P.name).map(([a,n])=>`<span class="acct">${esc(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}
         <div class="hero-meta">${POS_ORDER.filter(x=>P.pos[x]).sort((a,b)=>P.pos[b].g-P.pos[a].g).slice(0,2).map(x=>`<span class="pos-chip">${x}</span>`).join('')}</div>
       </div>
     </section>
@@ -722,7 +765,7 @@ function renderChamps(){
         <td class="r strong">${c.g}</td>
         <td class="r hide-m sub">${c.pr.toFixed(0)}%</td>
         <td class="r"><span class="strong ${kdaCls(c.kda)}">${c.kda.toFixed(2)}</span></td>
-        <td class="hide-m">${c.top ? `<span class="nm" data-go="${esc(c.top[0])}" style="cursor:pointer;font-weight:600">${esc(c.top[0])}</span> <span class="sub">${c.top[1].g}전 ${pct(c.top[1].w,c.top[1].g).toFixed(0)}%</span>` : ''}</td>
+        <td class="hide-m">${c.top ? `<span class="nm" data-go="${esc(c.top[0])}" style="cursor:pointer;font-weight:600">${esc(dn(c.top[0]))}</span> <span class="sub">${c.top[1].g}전 ${pct(c.top[1].w,c.top[1].g).toFixed(0)}%</span>` : ''}</td>
       </tr>`).join('')}</tbody></table>` : `<div class="empty">'${esc(q)}'에 해당하는 챔피언 기록이 없어요.</div>`}</div>`;
 }
 
@@ -736,7 +779,7 @@ function renderBalance(){
     for(let i=0;i<ps.length;i++) for(let j=i+1;j<ps.length;j++){ const k = ps[i]+'|'+ps[j]; (duo[k] ||= {g:0,w:0}); duo[k].g++; duo[k].w += m.winner===t; }
   }));
   const duos = Object.entries(duo).filter(([,v])=>v.g>=CONFIG.MIN_GAMES).map(([k,v])=>({n:k.split('|'),...v,rate:pct(v.w,v.g)}));
-  const tbl = arr => arr.length ? arr.map(d=>`<div class="list-row"><span class="duo">${ci(mainOf[d.n[0]],26,'round')}${ci(mainOf[d.n[1]],26,'round')}</span><span class="nm">${esc(d.n[0])} + ${esc(d.n[1])}</span><span class="sub">${d.g}전</span><span class="strong">${d.rate.toFixed(0)}%</span></div>`).join('') : `<div class="empty">같은 팀으로 ${CONFIG.MIN_GAMES}판 이상 뛴 조합이 쌓이면 보여요.</div>`;
+  const tbl = arr => arr.length ? arr.map(d=>`<div class="list-row"><span class="duo">${ci(mainOf[d.n[0]],26,'round')}${ci(mainOf[d.n[1]],26,'round')}</span><span class="nm">${esc(dn(d.n[0]))} + ${esc(dn(d.n[1]))}</span><span class="sub">${d.g}전</span><span class="strong">${d.rate.toFixed(0)}%</span></div>`).join('') : `<div class="empty">같은 팀으로 ${CONFIG.MIN_GAMES}판 이상 뛴 조합이 쌓이면 보여요.</div>`;
   return `<div class="grid2">
     <section class="box" style="grid-column:1/-1"><div class="box-h"><h3>진영별 승률</h3><span class="sub">전체 ${MATCHES.length}경기</span></div>
       <div style="padding-top:12px"><div class="split">${bw?`<div class="b" style="flex:${bp}">${bp.toFixed(0)}%</div>`:''}${MATCHES.length-bw?`<div class="rr" style="flex:${100-bp}">${(100-bp).toFixed(0)}%</div>`:''}</div>
@@ -787,7 +830,7 @@ async function load(){
       console.error('[내전 기록] 시트 요청 실패:', url, e);
     }
   }
-  buildMatches(); render();
+  buildMatches(); buildNames(); render();
   await icons; render();
 }
 
