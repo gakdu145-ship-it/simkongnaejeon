@@ -93,9 +93,10 @@ tbody tr.row:hover td{background:var(--surface2)}
 .strong{font-weight:700}
 .kda-good{color:var(--win)} .kda-great{color:var(--gold)}
 .rate{display:flex;align-items:center;gap:8px;min-width:150px}
-.rate .bar{flex:1;height:18px;border-radius:4px;background:var(--loss);display:flex;overflow:hidden;font-size:11px;font-weight:700;color:#fff;min-width:90px}
-.rate .bar i{background:var(--win);font-style:normal;display:flex;align-items:center;padding-left:6px;min-width:22px}
-.rate .bar b{margin-left:auto;padding-right:6px;display:flex;align-items:center;font-weight:700}
+.rate .bar{flex:1;height:18px;border-radius:4px;background:var(--surface2);display:flex;overflow:hidden;font-size:11px;font-weight:700;color:#fff;min-width:90px}
+.rate .bar i,.rate .bar b{display:flex;align-items:center;font-style:normal;font-weight:700;min-width:0;white-space:nowrap}
+.rate .bar i{background:var(--win);padding-left:6px}
+.rate .bar b{background:var(--loss);justify-content:flex-end;padding-right:6px}
 .rate .pct{width:38px;text-align:right;font-weight:700}
 .icons{display:flex;gap:3px}
 .form{display:flex;gap:2px}
@@ -213,21 +214,6 @@ tbody tr.row:hover td{background:var(--surface2)}
 .m-detail .tw td:first-child{box-shadow:inset 3px 0 var(--win)}
 .m-detail .tl td:first-child{box-shadow:inset 3px 0 var(--loss)}
 
-/* 전체 경기 */
-.game{overflow:hidden}
-.game-h{display:flex;gap:12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px}
-.game-h .res{font-weight:800}
-.game-b{display:grid;grid-template-columns:1fr 1fr}
-.team{padding:6px 0}
-.team + .team{border-left:1px solid var(--line)}
-.team.won{background:var(--win-bg)} .team.lost{background:var(--loss-bg)}
-.team-t{display:flex;justify-content:space-between;padding:4px 14px 6px;font-weight:700;font-size:12.5px}
-.team.won .team-t{color:var(--win)} .team.lost .team-t{color:var(--loss)}
-.prow{display:grid;grid-template-columns:28px 1fr 78px 42px 40px;gap:8px;align-items:center;padding:4px 14px;font-size:12.5px}
-.prow .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
-.prow .nm:hover{text-decoration:underline}
-.prow .nm small{display:block;font-weight:400;color:var(--muted);font-size:11.5px}
-
 /* 밸런스 */
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
 .split{display:flex;height:36px;border-radius:8px;overflow:hidden;font-weight:800;color:#fff;margin:4px 16px 0}
@@ -251,9 +237,11 @@ tbody tr.row:hover td{background:var(--surface2)}
   .brand small,.tools .hide-m{display:none}
   .wrap{padding:16px 12px 48px}
   .hide-m{display:none}
-  .game-b{grid-template-columns:1fr}
-  .team + .team{border-left:0;border-top:1px solid var(--line)}
   .sum-grid{grid-template-columns:1fr}
+  .leaders{grid-template-columns:1fr 1fr;gap:6px}
+  .leader{gap:8px;padding:10px}
+  .leader .ci{--s:30px!important}
+  .leader-val{font-size:15px}
   .mrow{grid-template-columns:1fr 70px 26px}
   .m-meta{grid-column:1/-1;flex-direction:row!important;gap:8px;align-items:baseline;padding-bottom:0!important}
   .m-meta hr{display:none}
@@ -269,7 +257,6 @@ tbody tr.row:hover td{background:var(--surface2)}
       <button role="tab" data-tab="rank">홈</button>
       <button role="tab" data-tab="profile">플레이어</button>
       <button role="tab" data-tab="champs">챔피언</button>
-      <button role="tab" data-tab="matches">경기 기록</button>
       <button role="tab" data-tab="balance">팀 밸런스</button>
     </nav>
     <div class="tools">
@@ -321,7 +308,7 @@ const POS_ALIAS = {top:'탑',jg:'정글',jug:'정글',jungle:'정글',mid:'미�
 const CHAMP_ALIAS = {'누누':'누누와 윌럼프','레나타':'레나타 글라스크','문도':'문도 박사','마이':'마스터 이','트페':'트위스티드 페이트','미포':'미스 포츈','블츠':'블리츠크랭크','아우솔':'아우렐리온 솔','자르반':'자르반 4세','케틀':'케이틀린','이렐':'이렐리아','칼리':'칼리스타','하딩':'하이머딩거','말파':'말파이트'};
 
 /* ---------- 상태 ---------- */
-const state = { rows:[], extraCols:[], tab:'rank', player:null, pos:'all', pSort:'rate', cSort:'picks', minOnly:false, champQ:'', matchPlayer:'', demo:false, range:'all', pChamp:'', open:new Set() };
+const state = { rows:[], extraCols:[], tab:'rank', player:null, pos:'all', pSort:'rate', cSort:'picks', minOnly:false, champQ:'', demo:false, range:'all', pChamp:'', open:new Set() };
 const $ = s => document.querySelector(s);
 const store = {
   get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
@@ -518,7 +505,11 @@ const posRows = () => state.pos === 'all' ? state.rows : state.rows.filter(r => 
 const allPlayers = () => playerStats(state.rows);
 
 /* ---------- 공통 조각 ---------- */
-const rateBar = (w,g) => { const r = pct(w,g); return `<div class="rate"><div class="bar"><i style="width:${r}%">${w}승</i><b>${g-w}패</b></div><span class="pct">${r.toFixed(0)}%</span></div>`; };
+// 승률 색: 60% 이상 파랑, 40% 미만 빨강, 그 사이는 기본색
+const rateColor = r => r >= 60 ? 'var(--win)' : r < 40 ? 'var(--loss)' : 'var(--ink)';
+// 승/패가 0인 쪽은 막대를 그리지 않아요 (1승 0패에 빨강이 보이지 않게)
+const rateBar = (w,g) => { const l = g-w, r = pct(w,g);
+  return `<div class="rate"><div class="bar">${w?`<i style="flex:${w}">${w}승</i>`:''}${l?`<b style="flex:${l}">${l}패</b>`:''}</div><span class="pct" style="color:${rateColor(r)}">${r.toFixed(0)}%</span></div>`; };
 const form = f => `<div class="form" aria-label="최근 ${f.length}경기 ${f.filter(Boolean).length}승">${f.map(w=>`<i class="${w?'w':'l'}"></i>`).join('')}</div>`;
 const th = (key,label,cur,cls='') => `<th class="sort ${cls} ${cur===key?'on':''}" data-sort="${key}">${label}</th>`;
 const posSeg = () => `<div class="seg" role="group" aria-label="포지션">${['all',...POS_ORDER].map(p=>`<button data-pos="${p}" aria-pressed="${state.pos===p}">${p==='all'?'전체':p}</button>`).join('')}</div>`;
@@ -528,22 +519,21 @@ function renderLeaders(list){
   if(!list.length) return '';
   const num = v => Number.isInteger(v) ? v.toLocaleString('ko-KR') : v.toFixed(2);
   const avg = (p,v) => `평균 ${fmt1(v/p.g)}`;
+  // 홈에 보여줄 1위 항목 (평균 지표는 MIN_GAMES판 이상 참가자 중에서)
+  const col = re => state.extraCols.find(h => re.test(h));
+  const avgOf = (h, label) => h && { label, v:p=>(p.extra[h] || 0)/p.g, show:v=>fmt1(v), min:true, sub:p=>`${p.g}전 평균` };
   const cats = [
     { label:'최다 출전', v:p=>p.g, unit:'판' },
-    { label:'최다 승리', v:p=>p.w, unit:'승' },
     { label:'최고 승률', v:p=>p.rate, show:v=>v.toFixed(0)+'%', min:true, sub:p=>`${p.g}전 ${p.w}승` },
     { label:'최고 KDA', v:p=>p.kda, show:v=>v.toFixed(2), min:true, sub:p=>`${p.g}전` },
-    { label:'평균 내전 점수', v:p=>p.score, show:v=>v.toFixed(0)+'점', min:true, sub:p=>`${p.g}전 평균` },
     { label:'최다 MVP', v:p=>p.mvp, unit:'회' },
     { label:'최장 연승', v:p=>p.streak, unit:'연승' },
-    { label:'킬', v:p=>p.k, sub:p=>avg(p,p.k) },
-    { label:'데스', v:p=>p.d, sub:p=>avg(p,p.d) },
-    { label:'어시스트', v:p=>p.a, sub:p=>avg(p,p.a) },
-    { label:'킬관여', v:p=>p.kpAvg, show:v=>v.toFixed(0)+'%', min:true, sub:p=>`${p.g}전 평균` },
-    ...state.extraCols.map(h => CONFIG.AVG_PATTERN.test(h)
-      ? { label:h, v:p=>(p.extra[h] || 0)/p.g, show:v=>fmt1(v), min:true, sub:p=>`${p.g}전 평균` }
-      : { label:h, v:p=>p.extra[h] || 0, sub:p=>avg(p,p.extra[h] || 0) })
-  ];
+    { label:'최고 킬관여', v:p=>p.kpAvg, show:v=>v.toFixed(0)+'%', min:true, sub:p=>`${p.g}전 평균` },
+    avgOf(col(/분당\s*cs/i), '분당 CS'),
+    avgOf(col(/가한|딜량/), '가한 피해량'),
+    avgOf(col(/받은/), '받은 피해량'),
+    avgOf(col(/시야/), '시야 점수')
+  ].filter(Boolean);
   return `<div class="leaders">${cats.map(c => {
     let pool = c.min ? list.filter(p => p.g >= CONFIG.MIN_GAMES) : list; if(!pool.length) pool = list;
     const best = Math.max(...pool.map(c.v)); if(!(best > 0)) return '';
@@ -657,7 +647,7 @@ function renderProfile(){
   if(pool.filter(d=>d.g>=CONFIG.DUO_MIN).length >= 3) pool = pool.filter(d=>d.g>=CONFIG.DUO_MIN);
   const bestDuo = [...pool].sort((a,b)=>b.rate-a.rate||b.g-a.g).slice(0,3);
   const worstDuo = [...pool].filter(d=>!bestDuo.includes(d)).sort((a,b)=>a.rate-b.rate||b.g-a.g).slice(0,3);
-  const comboList = (arr, good) => arr.length ? arr.map((d,i)=>`<div class="combo"><span class="no">${i+1}</span>${ci(mainOf[d.n],30,'round')}<span class="nm" data-go="${esc(d.n)}">${esc(d.n)}</span><span class="rt ${good?'w':'l'}">${d.rate.toFixed(0)}%<small>${d.g}전 ${d.w}승 ${d.g-d.w}패</small></span></div>`).join('') : '<div class="empty">함께한 기록이 더 쌓이면 보여요.</div>';
+  const comboList = (arr, good) => arr.length ? arr.map((d,i)=>`<div class="combo"><span class="no">${i+1}</span>${ci(mainOf[d.n],30,'round')}<span class="nm" data-go="${esc(d.n)}">${esc(d.n)}</span><span class="rt" style="color:${rateColor(d.rate)}">${d.rate.toFixed(0)}%<small>${d.g}전 ${d.w}승 ${d.g-d.w}패</small></span></div>`).join('') : '<div class="empty">함께한 기록이 더 쌓이면 보여요.</div>';
 
   let summary = '<div class="empty">조건에 맞는 경기가 없어요.</div>';
   if(S){
@@ -673,7 +663,7 @@ function renderProfile(){
         <div class="s-foot"><span class="sub">최근 ${S.form.length}경기</span>${form(S.form)}<span class="spacer"></span><span class="sub">킬관여 <b style="color:var(--ink)">${S.kpAvg.toFixed(0)}%</b></span><span class="sub">MVP <b style="color:var(--ink)">${S.mvp}</b></span></div>
       </div>
       <div class="scard"><h4>많이 플레이한 챔피언</h4>
-        ${S.champList.slice(0,3).map(c => `<div class="mc">${ci(c.name,32)}<span class="t"><b class="${c.rate>=60?'l':c.rate<50?'sub':'w'}" style="${c.rate>=60?'color:var(--loss)':''}">${c.rate.toFixed(0)}%</b> <span class="sub">(${c.w}승 ${c.g-c.w}패)</span></span><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></div>`).join('')}
+        ${S.champList.slice(0,3).map(c => `<div class="mc">${ci(c.name,32)}<span class="t"><b style="color:${rateColor(c.rate)}">${c.rate.toFixed(0)}%</b> <span class="sub">(${c.w}승 ${c.g-c.w}패)</span></span><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></div>`).join('')}
       </div>
       <div class="scard"><h4>포지션 분포</h4>
         <div class="posdist">${POS_ORDER.map(x => { const v = S.pos[x] || {g:0,w:0}; return `<div class="col" title="${x} ${v.g}전 ${v.w}승"><i style="height:${v.w/maxG*100}%"></i><i class="l" style="height:${(v.g-v.w)/maxG*100}%"></i></div>`; }).join('')}</div>
@@ -702,7 +692,7 @@ function renderProfile(){
         <section class="box"><div class="box-h"><h3>잘 맞는 조합 TOP3</h3><span class="sub">같은 팀 승률</span></div>${comboList(bestDuo, true)}</section>
         <section class="box"><div class="box-h"><h3>안 맞는 조합 TOP3</h3><span class="sub">같은 팀 승률</span></div>${comboList(worstDuo, false)}</section>
         <section class="box"><div class="box-h"><h3>챔피언</h3><span class="sub">${P.champList.length}개</span></div>
-          ${P.champList.map(c=>`<div class="list-row">${ci(c.name,30)}<span class="nm">${esc(cn(c.name))}<br><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></span><span class="sub">${c.g}전</span><span class="strong ${c.rate>=60?'w':c.rate<40?'l':''}">${c.rate.toFixed(0)}%</span></div>`).join('')}
+          ${P.champList.map(c=>`<div class="list-row">${ci(c.name,30)}<span class="nm">${esc(cn(c.name))}<br><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></span><span class="sub">${c.g}전</span><span class="strong" style="color:${rateColor(c.rate)}">${c.rate.toFixed(0)}%</span></div>`).join('')}
         </section>
 
       </div>
@@ -736,25 +726,6 @@ function renderChamps(){
       </tr>`).join('')}</tbody></table>` : `<div class="empty">'${esc(q)}'에 해당하는 챔피언 기록이 없어요.</div>`}</div>`;
 }
 
-/* ---------- 경기 기록 ---------- */
-function renderMatches(){
-  const names = [...new Set(state.rows.map(r=>r.player))].sort((a,b)=>a.localeCompare(b,'ko'));
-  const sel = state.matchPlayer;
-  const list = [...MATCHES].reverse().filter(m => !sel || [...m.blue,...m.red].some(r=>r.player===sel));
-  const team = (m,t) => `<div class="team ${m.winner===t?'won':'lost'}">
-      <div class="team-t"><span>${m.winner===t?'승리':'패배'} (${t==='blue'?'블루':'레드'})</span><span>${m[t+'Kills']}킬</span></div>
-      ${m[t].map(r => `<div class="prow">${ci(r.champ,28)}<span class="nm" data-go="${esc(r.player)}" style="${r.player===sel?'color:var(--accent)':''}">${esc(r.player)}<small>${esc(r.pos)}, ${esc(cn(r.champ))}</small></span>
-        <span class="r"><b>${r.k}/<span class="l">${r.d}</span>/${r.a}</b><br><span class="sub ${kdaCls(kda(r.k,r.d,r.a))}">${kda(r.k,r.d,r.a).toFixed(2)}</span></span>
-        <span class="r"><span class="pill sm ${scCls(r.score)}">${r.score}</span></span>
-        <span>${r.mvp?'<span class="badge mvp">MVP</span>':r.ace?'<span class="badge ace">ACE</span>':''}</span></div>`).join('')}
-    </div>`;
-  return `<div class="toolbar"><select id="matchPlayer"><option value="">모든 플레이어</option>${names.map(n=>`<option ${n===sel?'selected':''}>${esc(n)}</option>`).join('')}</select><span class="sub">${list.length}경기</span></div>
-    <div class="mlist">${list.map(m => `<article class="box game">
-      <div class="game-h"><span class="res ${m.winner==='blue'?'w':'l'}">${m.winner==='blue'?'블루':'레드'} 승리</span><span class="sub">${esc(m.date)}</span>${m.dur?`<span class="sub">${esc(durText(m.dur))}</span>`:""}<span class="spacer"></span><span class="sub">${esc(m.id)}</span><span class="strong"><span class="w">${m.blueKills}</span> : <span class="l">${m.redKills}</span></span></div>
-      <div class="game-b">${team(m,'blue')}${team(m,'red')}</div>
-    </article>`).join('') || '<div class="box empty">표시할 경기가 없어요.</div>'}</div>`;
-}
-
 /* ---------- 팀 밸런스 ---------- */
 function renderBalance(){
   const bw = MATCHES.filter(m=>m.winner==='blue').length, total = MATCHES.length || 1, bp = bw/total*100;
@@ -768,7 +739,7 @@ function renderBalance(){
   const tbl = arr => arr.length ? arr.map(d=>`<div class="list-row"><span class="duo">${ci(mainOf[d.n[0]],26,'round')}${ci(mainOf[d.n[1]],26,'round')}</span><span class="nm">${esc(d.n[0])} + ${esc(d.n[1])}</span><span class="sub">${d.g}전</span><span class="strong">${d.rate.toFixed(0)}%</span></div>`).join('') : `<div class="empty">같은 팀으로 ${CONFIG.MIN_GAMES}판 이상 뛴 조합이 쌓이면 보여요.</div>`;
   return `<div class="grid2">
     <section class="box" style="grid-column:1/-1"><div class="box-h"><h3>진영별 승률</h3><span class="sub">전체 ${MATCHES.length}경기</span></div>
-      <div style="padding-top:12px"><div class="split"><div class="b" style="flex:${bp}">${bp.toFixed(0)}%</div><div class="rr" style="flex:${100-bp}">${(100-bp).toFixed(0)}%</div></div>
+      <div style="padding-top:12px"><div class="split">${bw?`<div class="b" style="flex:${bp}">${bp.toFixed(0)}%</div>`:''}${MATCHES.length-bw?`<div class="rr" style="flex:${100-bp}">${(100-bp).toFixed(0)}%</div>`:''}</div>
       <div class="split-l"><span>블루 ${bw}승</span><span>레드 ${MATCHES.length-bw}승</span></div></div></section>
     <section class="box"><div class="box-h"><h3>잘 맞는 조합</h3><span class="sub">같은 팀 승률 높은 순</span></div>${tbl([...duos].sort((a,b)=>b.rate-a.rate||b.g-a.g).slice(0,8))}</section>
     <section class="box"><div class="box-h"><h3>안 풀리는 조합</h3><span class="sub">같은 팀 승률 낮은 순</span></div>${tbl([...duos].sort((a,b)=>a.rate-b.rate||b.g-a.g).slice(0,8))}</section>
@@ -780,7 +751,7 @@ function render(){
   const players = new Set(state.rows.map(r=>r.player)).size;
   $('#summary').textContent = MATCHES.length ? `${players}명, ${MATCHES.length}경기` : '';
   document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab===state.tab));
-  const views = { rank:renderRank, profile:renderProfile, champs:renderChamps, matches:renderMatches, balance:renderBalance };
+  const views = { rank:renderRank, profile:renderProfile, champs:renderChamps, balance:renderBalance };
   $('#view').innerHTML = views[state.tab]();
 }
 function setNotice(msg, err){
@@ -833,7 +804,6 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   if(e.target.id==='minOnly'){ state.minOnly = e.target.checked; render(); }
-  if(e.target.id==='matchPlayer'){ state.matchPlayer = e.target.value; render(); }
 });
 document.addEventListener('input', e => {
   if(e.target.id==='pq'){ const s = $('#psug'); s.innerHTML = suggestions(e.target.value); s.classList.add('on'); return; }
