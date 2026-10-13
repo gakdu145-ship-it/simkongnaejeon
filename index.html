@@ -159,7 +159,50 @@ h1 .tag{font-size:.62em}
 .csearch{position:relative}
 .csearch input{border:1px solid var(--line);background:var(--surface);border-radius:5px;padding:5px 30px 5px 10px;font-size:12.5px;width:200px}
 .csearch svg{position:absolute;right:9px;top:50%;transform:translateY(-50%);color:var(--muted)}
-.sum-grid{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:8px}
+.sum-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,.8fr) minmax(0,1fr);gap:8px}
+.c1{display:flex;flex-direction:column;gap:8px}
+.c1-top{display:flex;align-items:center;gap:6px;justify-content:space-around;padding:14px 12px}
+.c1-stat{display:flex;flex-direction:column;align-items:center;gap:1px;text-align:center}
+.c1-stat b{font-size:15px;font-weight:800}
+.c1-top .ring{width:66px;height:66px}
+.c1-top .ring span{width:52px;height:52px;background:var(--surface);color:var(--win);font-size:14px}
+.c1-subs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:8px}
+.c1-sub{display:flex;flex-direction:column;align-items:center;gap:1px;padding:9px 6px;text-align:center}
+.c1-sub .k{font-size:12px;font-weight:700}
+.c1-sub b{font-size:14px;font-weight:800}
+.c1-sub.good b{color:var(--win)} .c1-sub.bad b{color:var(--loss)}
+.day-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);padding:10px 2px 2px}
+.day-h:first-child{padding-top:0}
+.day-h b{color:var(--ink);margin-right:8px}
+.day-h i{font-style:normal;opacity:.5}
+.sum-main{display:flex;flex-direction:column;gap:12px;padding:14px}
+.sm-top{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:stretch}
+.rec{background:var(--surface2);border-radius:8px;padding:14px 18px;display:flex;flex-direction:column;justify-content:center;gap:10px;min-width:220px}
+.rec-t{font-weight:800;font-size:15px;color:var(--win);text-align:center}
+.rec-b{display:flex;align-items:center;gap:14px;justify-content:center}
+.rec-b b{font-size:14px}
+.ring{width:58px;height:58px;border-radius:50%;display:grid;place-items:center;flex:none}
+.ring span{width:46px;height:46px;border-radius:50%;background:var(--surface2);display:grid;place-items:center;font-weight:700;font-size:13px}
+.most h4{margin:2px 0 8px;font-size:12.5px;color:var(--muted);font-weight:600}
+.most-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.most-c{display:flex;gap:10px;align-items:center;min-width:0}
+.most-c .ci{border-radius:10px}
+.most-c b{font-size:14px}
+.most-c .sub{font-size:11.5px;line-height:1.35}
+.pills{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}
+.pill2{display:flex;align-items:center;justify-content:center;gap:14px;padding:9px 12px;border-radius:8px;background:var(--surface2);color:var(--ink);font-size:13px;cursor:default}
+.pill2 span{color:var(--muted)}
+.pill2 b{font-size:15px;font-weight:800}
+.pill2.good{background:var(--win-bg)} .pill2.good b,.pill2.good span{color:var(--win)}
+.pill2.bad{background:var(--loss-bg)} .pill2.bad b,.pill2.bad span{color:var(--loss)}
+.ptable{display:grid;grid-template-columns:auto repeat(5,minmax(0,1fr));gap:4px;margin-top:4px}
+.pt-col{display:flex;flex-direction:column;align-items:center;border-radius:8px;padding:6px 2px}
+.pt-col span{height:26px;display:flex;align-items:center;font-size:12.5px;font-weight:600;color:var(--muted);white-space:nowrap}
+.pt-col .pt-h{font-weight:800;color:var(--ink);font-size:13px}
+.pt-lab{align-items:flex-start;padding-right:6px}
+.pt-lab span{font-weight:700;color:var(--ink)}
+.pt-col.p1{background:var(--ink)} .pt-col.p1 span{color:var(--surface)}
+.pt-col.p2{background:var(--win-bg)} .pt-col.p2 span{color:var(--ink)}
 .scard{border:1px solid var(--line);border-radius:6px;padding:12px 14px;background:var(--surface)}
 .scard h4{margin:0 0 8px;font-size:12px;font-weight:600}
 .s-main{display:flex;gap:16px;align-items:center}
@@ -239,7 +282,7 @@ h1 .tag{font-size:.62em}
 @media (max-width:960px){
   .prof{grid-template-columns:1fr}
   .sum-grid{grid-template-columns:1fr 1fr}
-  .sum-grid .scard:first-child{grid-column:1/-1}
+  .sum-grid .c1{grid-column:1/-1}
   .mrow{grid-template-columns:84px 1fr 76px 28px}
   .m-teams{display:none!important}
 }
@@ -249,6 +292,13 @@ h1 .tag{font-size:.62em}
   .wrap{padding:16px 12px 48px}
   .hide-m{display:none}
   .sum-grid{grid-template-columns:1fr}
+  .c1-top .ring{width:56px;height:56px} .c1-top .ring span{width:44px;height:44px;font-size:12.5px}
+  .c1-stat b{font-size:13.5px}
+  .sm-top{grid-template-columns:1fr}
+  .rec{min-width:0}
+  .most-c{flex-direction:column;align-items:flex-start;gap:6px}
+  .most-c .ci{--s:44px!important}
+  .pt-col span{font-size:11.5px}
   .leaders{grid-template-columns:1fr 1fr;gap:6px}
   .leader{gap:8px;padding:10px}
   .leader .ci{--s:30px!important}
@@ -504,6 +554,7 @@ const kda = (k,d,a) => (k+a) / Math.max(d,1);
 const pct = (w,g) => g ? w/g*100 : 0;
 const fmt1 = v => v.toLocaleString('ko-KR', { maximumFractionDigits:1 });
 // '48:35:00'처럼 시:분:초로 들어간 값도 '48분 35초'로 표시
+const durMin = v => { const p = String(v||'').split(':').map(Number); if(p.length < 2 || p.some(isNaN)) return 0; return p.length === 3 && p[0] >= 10 ? p[0] + p[1]/60 : p.length === 3 ? p[0]*60 + p[1] + p[2]/60 : p[0] + p[1]/60; };
 const durText = v => { const p = String(v).split(':').map(Number); if(p.length < 2 || p.some(isNaN)) return v; const [m,s] = p.length === 3 && p[0] >= 10 ? [p[0],p[1]] : p.length === 3 ? [p[0]*60+p[1],p[2]] : p; return `${m}분 ${String(s).padStart(2,'0')}초`; };
 const scCls = v => v >= 60 ? 'hi' : v >= 45 ? 'mid' : 'lo';
 const ago = d => { const t = new Date(d); if(isNaN(t)) return d; const n = Math.floor((Date.now() - t) / 864e5); return n <= 0 ? '오늘' : n === 1 ? '어제' : n < 31 ? `${n}일 전` : d; };
@@ -560,7 +611,7 @@ function playerStats(rows){
   const map = {};
   rows.forEach(r => {
     const p = map[r.player] ||= { name:r.player, g:0, w:0, k:0, d:0, a:0, kp:0, mvp:0, games:[], pos:{}, champs:{}, extra:{} };
-    p.g++; p.w += r.win; p.k += r.k; p.d += r.d; p.a += r.a; p.kp += r.kp || 0; p.mvp += r.mvp ? 1 : 0; p.sc = (p.sc||0) + (r.score||0);
+    p.g++; p.w += r.win; p.k += r.k; p.d += r.d; p.a += r.a; p.kp += r.kp || 0; p.mvp += r.mvp ? 1 : 0; p.sc = (p.sc||0) + (r.score||0); p.pl = (p.pl||0) + (r.place||0);
     p.games.push(r);
     (p.pos[r.pos] ||= {g:0,w:0}); p.pos[r.pos].g++; p.pos[r.pos].w += r.win;
     const c = p.champs[r.champ] ||= {g:0,w:0,k:0,d:0,a:0}; c.g++; c.w += r.win; c.k += r.k; c.d += r.d; c.a += r.a;
@@ -568,7 +619,7 @@ function playerStats(rows){
   });
   return Object.values(map).map(p => {
     p.games.sort((a,b) => a.idx - b.idx);
-    p.rate = pct(p.w,p.g); p.kda = kda(p.k,p.d,p.a); p.kpAvg = p.kp / p.g; p.score = p.sc / p.g;
+    p.rate = pct(p.w,p.g); p.kda = kda(p.k,p.d,p.a); p.kpAvg = p.kp / p.g; p.score = p.sc / p.g; p.placeAvg = p.pl / p.g;
     p.form = p.games.slice(-CONFIG.FORM_LEN).map(g => g.win);
     let run = 0; p.streak = 0; p.games.forEach(g => { run = g.win ? run+1 : 0; p.streak = Math.max(p.streak, run) });
     p.champList = Object.entries(p.champs).map(([n,c]) => ({ name:n, ...c, rate:pct(c.w,c.g), kda:kda(c.k,c.d,c.a) })).sort((a,b)=>b.g-a.g || b.w-a.w);
@@ -702,6 +753,16 @@ function suggestions(q){
   const hl = n => { if(!k) return esc(n); const i = n.toLowerCase().indexOf(k); if(i < 0) return esc(n); return esc(n.slice(0,i)) + '<mark>' + esc(n.slice(i,i+k.length)) + '</mark>' + esc(n.slice(i+k.length)); };
   return hits.map((p,i) => `<button data-go="${esc(p.name)}" class="${i===0&&k?'act':''}">${ci(p.main,28,'round')}<span class="nm">${hl(dn(p.name))}${k && !dn(p.name).toLowerCase().includes(k) && via(p) ? ` <span class="sub">${tagged(via(p))}</span>` : ''}</span><span class="sub">${p.g}전 ${p.w}승 ${p.rate.toFixed(0)}%</span></button>`).join('');
 }
+// 같은 날 경기끼리 묶고, 묶음 위에 '2일 전  3게임 / 2승 1패 / 67% / 점수 / 104분' 요약줄
+function dayGroups(games){
+  const groups = [];
+  [...games].reverse().forEach(r => { const last = groups[groups.length-1]; if(last && last.date === r.date) last.list.push(r); else groups.push({ date:r.date, list:[r] }); });
+  return groups.map(gp => {
+    const n = gp.list.length, w = gp.list.filter(r=>r.win).length, sc = gp.list.reduce((a,r)=>a+r.score,0)/n;
+    const min = gp.list.reduce((a,r)=>a+durMin(MATCHES[r.idx].dur),0);
+    return `<div class="day-h"><b>${esc(ago(gp.date))}</b><span>${n}게임</span><i>/</i><span>${w}승 ${n-w}패</span><i>/</i><span style="color:${rateColor(w/n*100)}">${(w/n*100).toFixed(0)}%</span><i>/</i><span class="pill sm ${scCls(sc)}">${sc.toFixed(0)}</span>${min?`<i>/</i><span>${Math.round(min)}분</span>`:''}</div>` + gp.list.map(matchBand).join('');
+  }).join('');
+}
 function renderProfile(){
   const all = allPlayers().sort((a,b)=>b.g-a.g);
   const search = searchBox();
@@ -730,26 +791,54 @@ function renderProfile(){
 
   let summary = '<div class="empty">조건에 맞는 경기가 없어요.</div>';
   if(S){
-    const maxG = Math.max(...POS_ORDER.map(x => S.pos[x]?.g || 0), 1);
+    // 팀운: 내 경기에서 같은 팀 4명의 평균 내전 점수. 전체 소환사 중 상위 몇 %인지로 표시
+    const luckOf = gs => { const v = gs.map(g => { const t = MATCHES[g.idx][g.team].filter(x => x.player !== g.player); return t.length ? t.reduce((a,x)=>a+x.score,0)/t.length : null; }).filter(x => x !== null); return v.length ? v.reduce((a,b)=>a+b,0)/v.length : null; };
+    const myLuck = luckOf(games);
+    const luckAll = all.map(x => luckOf(x.games)).filter(x => x !== null);
+    const luckTop = myLuck === null ? null : Math.max(1, Math.round(luckAll.filter(x => x > myLuck).length / luckAll.length * 100) || 1);
+    const luckLabel = luckTop === null ? null : luckTop <= 20 ? ['최고','good'] : luckTop <= 40 ? ['좋음','good'] : luckTop <= 60 ? ['보통',''] : luckTop <= 80 ? ['나쁨','bad'] : ['최악','bad'];
+
+    // 맞라인: 같은 포지션 상대보다 골드(없으면 가한 피해량)가 많았던 경기 비율
+    const laneCol = state.extraCols.find(h => /골드/.test(h)) || state.extraCols.find(h => /가한|딜량/.test(h));
+    let lw = 0, lt = 0;
+    if(laneCol) games.forEach(g => {
+      const opp = MATCHES[g.idx][g.team==='blue'?'red':'blue'].find(x => x.pos === g.pos);
+      const a = g.extra?.[laneCol] || 0, b = opp?.extra?.[laneCol] || 0;
+      if(opp && a !== b){ lt++; if(a > b) lw++; }
+    });
+    const subs = [
+      { k:'평균 등수', v:`${S.placeAvg.toFixed(1)}등`, sub:'10명 중', t: S.placeAvg <= 3.5 ? 'good' : S.placeAvg > 6.5 ? 'bad' : '' },
+      luckLabel && { k:'팀운', v:luckLabel[0], sub:`상위 ${luckTop}%`, t:luckLabel[1], title:'같은 팀원들의 평균 내전 점수 기준' },
+      lt && { k:'맞라인', v:`${(lw/lt*100).toFixed(0)}%`, sub:`${lw}승 ${lt-lw}패`, t: lw/lt >= .5 ? 'good' : 'bad', title:`같은 포지션 상대보다 ${laneCol}이 많았던 경기 비율` }
+    ].filter(Boolean);
+
+    const order = [...POS_ORDER].sort((a,b) => (S.pos[b]?.g||0) - (S.pos[a]?.g||0));
+    const posCols = POS_ORDER.map(x => {
+      const v = S.pos[x] || {g:0,w:0};
+      const cls = v.g && x === order[0] ? 'p1' : v.g && x === order[1] ? 'p2' : '';
+      return `<div class="pt-col ${cls}"><span class="pt-h">${x}</span><span>${(v.g/S.g*100).toFixed(1)}%</span><span>${v.g ? pct(v.w,v.g).toFixed(1)+'%' : '0%'}</span><span>${v.g}</span></div>`;
+    }).join('');
+
     summary = `<div class="sum-grid">
-      <div class="scard">
-        <div class="s-main">
-          <div class="donut" style="background:conic-gradient(var(--win) ${S.rate}%, var(--loss) 0)"><span>${S.rate.toFixed(0)}%</span></div>
-          <div class="s-col"><span class="big">${S.g} 게임</span><span class="sub">${S.w}승 ${S.g-S.w}패</span></div>
-          <div class="s-col"><span class="big ${kdaCls(S.kda)||'w'}">${S.kda.toFixed(2)} KDA</span><span class="sub">${fmt1(S.k/S.g)} / <span class="l">${fmt1(S.d/S.g)}</span> / ${fmt1(S.a/S.g)}</span></div>
-          <div class="s-col"><span class="big" style="color:var(--s-${scCls(S.score)})">${S.score.toFixed(0)}</span><span class="sub">내전 점수</span></div>
+      <div class="c1">
+        <div class="scard c1-top">
+          <div class="ring" style="background:conic-gradient(var(--win) ${S.rate}%, var(--loss) 0)"><span>${S.rate.toFixed(0)}%</span></div>
+          <div class="c1-stat"><b>${S.g} 게임</b><span class="sub">${S.w}승 ${S.g-S.w}패</span></div>
+          <div class="c1-stat"><b class="${kdaCls(S.kda)}">${S.kda.toFixed(2)} KDA</b><span class="sub">${fmt1(S.k/S.g)} / <span class="l">${fmt1(S.d/S.g)}</span> / ${fmt1(S.a/S.g)}</span></div>
+          <div class="c1-stat"><b style="color:var(--s-${scCls(S.score)})">${S.score.toFixed(0)}</b><span class="sub">내전 점수</span></div>
         </div>
-        <div class="s-foot"><span class="sub">최근 ${S.form.length}경기</span>${form(S.form)}<span class="spacer"></span><span class="sub">킬관여 <b style="color:var(--ink)">${S.kpAvg.toFixed(0)}%</b></span><span class="sub">MVP <b style="color:var(--ink)">${S.mvp}</b></span></div>
+        <div class="c1-subs">${subs.map(x => `<div class="scard c1-sub ${x.t}"${x.title?` title="${esc(x.title)}"`:''}><span class="k">${x.k}</span><b>${x.v}</b><span class="sub">${x.sub}</span></div>`).join('')}</div>
       </div>
       <div class="scard"><h4>많이 플레이한 챔피언</h4>
-        ${S.champList.slice(0,3).map(c => `<div class="mc">${ci(c.name,32)}<span class="t"><b style="color:${rateColor(c.rate)}">${c.rate.toFixed(0)}%</b> <span class="sub">(${c.w}승 ${c.g-c.w}패)</span></span><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></div>`).join('')}
+        ${S.champList.slice(0,3).map(c => `<div class="mc">${ci(c.name,34)}<span class="t"><b style="color:${rateColor(c.rate)}">${c.rate.toFixed(0)}%</b> <span class="sub">(${c.w}승 ${c.g-c.w}패)</span></span><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></div>`).join('')}
       </div>
       <div class="scard"><h4>포지션 분포</h4>
-        <div class="posdist">${POS_ORDER.map(x => { const v = S.pos[x] || {g:0,w:0}; return `<div class="col" title="${x} ${v.g}전 ${v.w}승"><i style="height:${v.w/maxG*100}%"></i><i class="l" style="height:${(v.g-v.w)/maxG*100}%"></i></div>`; }).join('')}</div>
-        <div class="poslab">${POS_ORDER.map(x=>`<span>${x}</span>`).join('')}</div>
+        <div class="ptable"><div class="pt-col pt-lab"><span class="pt-h">&nbsp;</span><span>비율</span><span>승률</span><span>게임수</span></div>${posCols}</div>
       </div>
     </div>`;
   }
+
+
 
   return search + `
     <section class="box hero">
@@ -777,7 +866,7 @@ function renderProfile(){
         </section>
 
       </div>
-      <section><div class="mlist">${[...games].reverse().map(matchBand).join('') || '<div class="box empty">표시할 경기가 없어요.</div>'}</div></section>
+      <section><div class="mlist">${dayGroups(games) || '<div class="box empty">표시할 경기가 없어요.</div>'}</div></section>
     </div>`;
 }
 
