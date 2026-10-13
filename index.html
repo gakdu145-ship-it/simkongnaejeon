@@ -293,6 +293,7 @@ const CONFIG = {
   CSV_URL: 'https://docs.google.com/spreadsheets/d/1fDlMWHmB5ga1z_uXAErrsGShFFqy4Bo6pwEdnv5WfDs/edit?usp=sharing',
   SHEET_NAME: '',         // 기록 탭 이름. 비우면 첫 번째 탭
   MIN_GAMES: 3,
+  CLEAN_NICK: true,       // 디스코드 닉네임에서 나이·티어를 떼고 닉네임만 표시
   DUO_MIN: 2,             // 조합 TOP3에 오르는 최소 함께한 판수           // 승률·KDA 1위와 조합 분석에 필요한 최소 판수
   FORM_LEN: 10,
   // 시트에서 이미 계산된 값이라 자동 지표에서 빼는 컬럼 (사이트가 직접 계산)
@@ -420,21 +421,46 @@ function normalize(table){
 /* ---------- 표시 이름 ----------
    키(디스코드 ID 또는 소환사명) → 화면 이름. 디스코드 닉네임이 있으면 가장 최근 경기의 닉네임,
    없으면 가장 많이 쓴 소환사명. ACCOUNTS에는 그 유저가 쓴 롤 계정들이 판수와 함께 들어가요 */
-let NAMES = {}, ACCOUNTS = {}, REG = new Set();
+let NAMES = {}, ACCOUNTS = {}, REG = new Set(), DISP = {};
 function buildNames(){
-  NAMES = {}; ACCOUNTS = {}; REG = new Set();
+  NAMES = {}; ACCOUNTS = {}; REG = new Set(); DISP = {};
   const disc = {};
   state.rows.forEach(r => {   // rows는 buildMatches 이후 경기 순서(idx)를 가짐
     const acc = ACCOUNTS[r.player] ||= {};
     if(r.summoner) acc[r.summoner] = (acc[r.summoner] || 0) + 1;
-    if(r.discordName && (!disc[r.player] || (r.idx ?? 0) >= disc[r.player].i)) disc[r.player] = { n:r.discordName, i:r.idx ?? 0 };
+    if(r.discordName && (!disc[r.player] || (r.idx ?? 0) >= disc[r.player].i)) disc[r.player] = { n:cleanNick(r.discordName), i:r.idx ?? 0 };
   });
   Object.keys(ACCOUNTS).forEach(k => {
     const top = Object.entries(ACCOUNTS[k]).sort((a,b)=>b[1]-a[1])[0];
     // 디스코드 미등록이면 소환사명에서 #태그를 뗀 이름으로 표시 (Labile#0615 → Labile)
-    NAMES[k] = disc[k]?.n || noTag(top?.[0] || k);
+    NAMES[k] = noTag(disc[k]?.n || top?.[0] || k);
+    DISP[k] = disc[k]?.n || top?.[0] || k;
     if(disc[k]) REG.add(k);
   });
+}
+/* 디스코드 닉네임 정리: '(나이) (닉네임) (티어)'에서 닉네임만 남겨요
+   예) 99 담 배#멘 솔 G3 → 담 배#멘 솔 / 00 나눔이#대한적십자 M672 → 나눔이#대한적십자 / 97 야 옹#주인님 U → 야 옹#주인님
+   나이: 맨 앞 2자리 숫자(95, [95], 95년생) / 티어: 맨 뒤 G3, P3, E1, D4, M672, GM300, C1000, U, 골드2 등
+   #태그는 다른 곳처럼 화면에서 연하게 처리돼요. 원본 그대로 보려면 CONFIG.CLEAN_NICK = false */
+const AGE_HEAD = /^\s*(?:[\[(（]\d{2}(?:년생|살)?[\])）]\s*[|/·,]?\s*|\d{2}(?:년생|살)?(?:\s*[|/·,]\s*|\s+|(?=[\[(（])))/;
+const TIER_WORD = '(?:' + [
+  '[ibsgped][1-4]', 'gm\\d*', 'm\\d*', 'c\\d*', 'u', 'unrank(?:ed)?',
+  '(?:아이언|브론즈|브론|실버|골드|플래티넘|플래|플레|에메랄드|에메|다이아몬드|다이아|마스터|그랜드마스터|그마|챌린저|챌|언랭크?|언랭|배치)\\s*\\d{0,4}',
+  '(?:iron|bronze|silver|gold|platinum|plat|emerald|diamond|master|grandmaster|challenger)\\s*\\d{0,4}'
+].join('|') + ')';
+// 띄어쓰기·구분자 뒤의 티어(… G3) 또는 괄호로 감싼 티어(…[다이아])
+const TIER_TAIL = new RegExp('(?:(?:\\s*[|/·,]\\s*|\\s+)' + TIER_WORD + '|\\s*[\\[(（]' + TIER_WORD + '[\\])）])\\s*$', 'i');
+// 이모지·장식 기호: 닉네임 맨 앞/맨 뒤에 붙은 것만 제거
+const DECOR = /^[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f\u20e3★☆✦✧♡♥❤︎•·|\s]+/u;
+const DECOR_END = /[\p{Extended_Pictographic}\p{Emoji_Modifier}\u200d\ufe0f★☆✦✧♡♥•·|\s]+$/u;
+function cleanNick(raw){
+  if(!CONFIG.CLEAN_NICK || !raw) return raw;
+  let n = String(raw).trim();
+  n = n.replace(DECOR, '').replace(DECOR_END, '');   // 관리자 이모지 등 앞뒤 장식 (🍁 97 거노#0318 E4)
+  n = n.replace(AGE_HEAD, '');
+  n = n.replace(TIER_TAIL, '');
+  n = n.replace(/^[\[(（](.*)[\])）]$/, '$1').trim();   // (닉네임)처럼 괄호만 남은 경우
+  return n || String(raw).trim();
 }
 const noTag = n => String(n).replace(/\s*#[^#]*$/,'').trim() || n;
 const dn = k => NAMES[k] || noTag(k);
@@ -639,7 +665,7 @@ function statChips(r){
 function matchDetail(m, me){
   const cols = state.extraCols.filter(h => !CONFIG.AVG_PATTERN.test(h)).slice(0,4);
   const row = r => `<tr class="${r.player===me?'me':''} ${r.win?'tw':'tl'}">
-    <td><div class="who" style="font-weight:600">${ci(r.champ,24)}<span class="nm" data-go="${esc(r.player)}" style="cursor:pointer">${esc(dn(r.player))}${REG.has(r.player) && r.summoner ? ` <span class="sub">${tagged(r.summoner)}</span>` : ''}</span></div></td>
+    <td><div class="who" style="font-weight:600">${ci(r.champ,24)}<span class="nm" data-go="${esc(r.player)}" style="cursor:pointer">${esc(dn(r.player))}${REG.has(r.player) && r.summoner && noTag(r.summoner) !== dn(r.player) ? ` <span class="sub">${tagged(r.summoner)}</span>` : ''}</span></div></td>
     <td class="sub">${esc(r.pos)}</td>
     <td class="r"><span class="pill sm ${scCls(r.score)}">${r.score}</span> <span class="sub">${r.place}등</span></td>
     <td class="r"><b>${r.k}/<span class="l">${r.d}</span>/${r.a}</b> <span class="sub">${kda(r.k,r.d,r.a).toFixed(2)}</span></td>
@@ -728,7 +754,7 @@ function renderProfile(){
   return search + `
     <section class="box hero">
       <span class="av">${ci(P.main, 72)}<span class="lv">${rank>=0?`${rank+1}위`:`${P.g}전`}</span></span>
-      <div><h1>${REG.has(P.name) ? esc(dn(P.name)) : tagged(accountsOf(P.name)[0]?.[0] || P.name)}</h1>
+      <div><h1>${tagged(REG.has(P.name) ? DISP[P.name] : (accountsOf(P.name)[0]?.[0] || P.name))}</h1>
         <div class="sub">${P.g}전 ${P.w}승 ${P.g-P.w}패, 승률 ${P.rate.toFixed(0)}%, 최장 ${P.streak}연승</div>
         ${accountsOf(P.name).length > 1 ? `<div class="accts"><button class="acct-toggle" data-accts aria-expanded="${state.showAccts}">롤 계정 ${accountsOf(P.name).length}개 ${ICON_DOWN}</button>
           ${state.showAccts ? `<div class="acct-list">${accountsOf(P.name).map(([a,n])=>`<span class="acct">${tagged(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}</div>` : ''}
