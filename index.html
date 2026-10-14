@@ -150,6 +150,13 @@ tbody tr.row:hover td{background:var(--surface2)}
 .tag{color:var(--muted);font-weight:400;font-size:.8em;opacity:.75;margin-left:3px;letter-spacing:0}
 h1 .tag{font-size:.62em}
 
+.tier{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--tc);background:color-mix(in srgb, var(--tc) 12%, transparent);border:1px solid color-mix(in srgb, var(--tc) 35%, transparent);padding:1px 8px;border-radius:999px;white-space:nowrap}
+.tier b{color:var(--ink);font-weight:800}
+.mmr-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
+.mmr-next{display:inline-flex;align-items:center;gap:8px}
+.mmr-next .track{width:120px;height:6px;border-radius:3px;background:var(--surface2);overflow:hidden;border:1px solid var(--line)}
+.mmr-next .track i{display:block;height:100%;border-radius:3px}
+
 /* 프로필: 요약 */
 .sum{padding:12px;margin-bottom:12px}
 .sum-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
@@ -340,8 +347,9 @@ h1 .tag{font-size:.62em}
    매핑되지 않은 숫자 컬럼(딜량, 골드 등)은 부문별 1위에 자동 추가됩니다
    ============================================================ */
 const CONFIG = {
-  CSV_URL: 'https://script.google.com/macros/s/AKfycbzxbEVgSwnZJzPH86_eOsAlPxCcqJHu2DeWvsfRu6fUjVn-67ZfRpBrdBje4Ah6C3Lo/exec',
+  CSV_URL: 'https://docs.google.com/spreadsheets/d/1fDlMWHmB5ga1z_uXAErrsGShFFqy4Bo6pwEdnv5WfDs/edit?usp=sharing',
   SHEET_NAME: '',         // 기록 탭 이름. 비우면 첫 번째 탭
+  MMR_SHEET: '',          // 시트 주소를 직접 쓸 때만: MMR 랭킹 탭 이름 (Apps Script 창구를 쓰면 비워두세요)
   MIN_GAMES: 3,
   CLEAN_NICK: true,       // 디스코드 닉네임에서 나이·티어를 떼고 닉네임만 표시
   DUO_MIN: 2,             // 조합 TOP3에 오르는 최소 함께한 판수           // 승률·KDA 1위와 조합 분석에 필요한 최소 판수
@@ -355,6 +363,7 @@ const CONFIG = {
     match:  ['매치id','경기id','매치','경기번호','경기','게임','matchid','match','game','id'],
     dur:    ['게임시간','경기시간','플레이시간','duration'],
     team:   ['팀','진영','side','team'],
+    ai:     ['ai-score','aiscore','ai스코어','ai점수','내전점수'],
     discordName: ['디스코드닉네임','디스코드이름','discordnickname','discordname'],
     discordId:   ['디스코드id','디스코드고유id','discordid','discorduid'],
     player: ['소환사명','플레이어','닉네임','이름','소환사','소환사이름','summoner','summonername','riotid','player','name'],
@@ -372,7 +381,7 @@ const POS_ALIAS = {top:'탑',jg:'정글',jug:'정글',jungle:'정글',mid:'미�
 const CHAMP_ALIAS = {'누누':'누누와 윌럼프','레나타':'레나타 글라스크','문도':'문도 박사','마이':'마스터 이','트페':'트위스티드 페이트','미포':'미스 포츈','블츠':'블리츠크랭크','아우솔':'아우렐리온 솔','자르반':'자르반 4세','케틀':'케이틀린','이렐':'이렐리아','칼리':'칼리스타','하딩':'하이머딩거','말파':'말파이트'};
 
 /* ---------- 상태 ---------- */
-const state = { rows:[], extraCols:[], tab:'rank', player:null, pos:'all', pSort:'rate', cSort:'picks', minOnly:false, champQ:'', demo:false, range:'all', pChamp:'', open:new Set(), showAccts:false };
+const state = { rows:[], extraCols:[], tab:'rank', player:null, pos:'all', pSort:'mmr', cSort:'picks', minOnly:false, champQ:'', demo:false, range:'all', pChamp:'', open:new Set(), showAccts:false };
 const $ = s => document.querySelector(s);
 const store = {
   get(k){ try{ return localStorage.getItem(k) }catch(e){ return null } },
@@ -457,6 +466,7 @@ function normalize(table){
       pos: POS_ALIAS[posRaw.toLowerCase()] || posRaw || '?',
       win: ['승','승리','w','win','1','true','o'].includes(res),
       k: +get(r,'k') || 0, d: +get(r,'d') || 0, a: +get(r,'a') || 0,
+      ai: get(r,'ai') === '' ? null : (+String(get(r,'ai')).replace(/[,%\s]/g,'') || 0),
       extra: Object.fromEntries(extraCols.map(({h,i}) => [h, toNum(r[i]) || 0]))
     };
   }).filter(r => r.player);
@@ -514,6 +524,53 @@ function cleanNick(raw){
 }
 const noTag = n => String(n).replace(/\s*#[^#]*$/,'').trim() || n;
 const dn = k => NAMES[k] || noTag(k);
+
+/* ---------- MMR 랭킹 (시트에서 계산한 값) ----------
+   탭 구성: 왼쪽 표(순위, 대표 닉네임, 최종 MMR, 티어 …) + 빈 열 + 오른쪽 티어표(티어표, MMR 기준) */
+let MMR = {}, TIERS = [], MMR_RAW = null;
+const TIER_STYLE = { '챌린저':'#E0A82E', '그랜드마스터':'#D9534F', '마스터':'#9B59D0', '다이아몬드':'#3D7FE0', '에메랄드':'#1FA67A', '플래티넘':'#2AA6A0', '골드':'#C99A2E', '실버':'#8A95A5', '브론즈':'#A0694A', '아이언':'#6B6B6B' };
+const tierColor = t => { const k = Object.keys(TIER_STYLE).find(x => String(t||'').includes(x) || x.includes(String(t||'').slice(0,2))); return k ? TIER_STYLE[k] : 'var(--muted)'; };
+const tierBadge = (t, mmr) => t ? `<span class="tier" style="--tc:${tierColor(t)}">${esc(t)}${mmr!=null?` <b>${Math.round(mmr)}</b>`:''}</span>` : '';
+function splitBlocks(table){
+  const w = Math.max(...table.map(r => r.length));
+  const empty = c => table.every(r => !String(r[c] ?? '').trim());
+  const blocks = []; let cur = null;
+  for(let c = 0; c < w; c++){
+    if(empty(c)){ cur = null; continue; }
+    if(!cur){ cur = []; blocks.push(cur); }
+    cur.push(c);
+  }
+  return blocks.map(cols => table.map(r => cols.map(c => String(r[c] ?? '').trim())).filter(r => r.some(Boolean)));
+}
+function parseMmr(text){
+  const [main, tierTbl] = splitBlocks(parseCSV(text));
+  if(!main || main.length < 2) return null;
+  const h = main[0].map(x => x.toLowerCase().replace(/\s/g,''));
+  const col = names => h.findIndex(x => names.includes(x));
+  const ci_ = { rank:col(['순위','rank']), name:col(['대표닉네임','닉네임','소환사명','플레이어','name']), mmr:col(['최종mmr','mmr']), tier:col(['티어','tier']) };
+  if(ci_.name < 0 || ci_.mmr < 0) return null;
+  const rows = main.slice(1).map(r => ({ rank:+r[ci_.rank] || null, name:r[ci_.name], mmr:+String(r[ci_.mmr]).replace(/,/g,'') || 0, tier:ci_.tier >= 0 ? r[ci_.tier] : '' })).filter(r => r.name);
+  const tiers = (tierTbl || []).slice(1).map(r => ({ name:r[0], min:+String(r[1]).replace(/,/g,'') })).filter(t => t.name && !isNaN(t.min)).sort((a,b)=>b.min-a.min);
+  return { rows, tiers };
+}
+// 대표 닉네임 → 사이트의 유저 키 (롤 계정, 디스코드 닉네임 순으로 찾기)
+function buildMmr(){
+  MMR = {}; TIERS = MMR_RAW?.tiers || [];
+  if(!MMR_RAW) return;
+  const idx = {};
+  Object.keys(ACCOUNTS).forEach(k => {
+    Object.keys(ACCOUNTS[k]).forEach(a => { idx[a] ||= k; idx[noTag(a)] ||= k; });
+    idx[dn(k)] ||= k; if(DISP[k]) idx[DISP[k]] ||= k;
+  });
+  MMR_RAW.rows.forEach(r => {
+    const k = idx[r.name] || idx[noTag(r.name)];
+    if(k && (!MMR[k] || r.mmr > MMR[k].mmr)) MMR[k] = r;
+  });
+}
+function nextTier(mmr){
+  const up = [...TIERS].reverse().find(t => t.min > mmr);
+  return up ? { name:up.name, left:Math.ceil(up.min - mmr), from:(TIERS.find(t => t.min <= mmr)?.min ?? 0), to:up.min } : null;
+}
 // 'Labile#0615' → Labile + 연한 #0615 (HTML 반환)
 const tagged = n => { const m = String(n).match(/^(.*?)\s*(#[^#]*)$/); return m && m[1] ? `${esc(m[1])}<span class="tag">${esc(m[2])}</span>` : esc(n); };
 const accountsOf = k => Object.entries(ACCOUNTS[k] || {}).sort((a,b)=>b[1]-a[1]);
@@ -565,8 +622,18 @@ const kdaCls = v => v >= 5 ? 'kda-great' : v >= 3 ? 'kda-good' : '';
 let ORDER = [], MATCHES = [];
 
 // 내전 점수: 같은 경기 10명 안에서 각 지표의 상대 순위를 가중 평균해 0~100으로 환산
+// 시트에 AI-Score가 있으면 그 값을 쓰고, 없으면 사이트가 직접 계산해요
+let SHEET_SCORE = false;
+const SCORE_NAME = () => SHEET_SCORE ? 'AI-Score' : '내전 점수';
+const sc1 = v => Number.isInteger(v) ? v : +v.toFixed(1);
 function scoreMatch(m){
   const ps = [...m.blue, ...m.red];
+  if(ps.length && ps.every(r => r.ai !== null && r.ai !== undefined)){
+    SHEET_SCORE = true;
+    ps.forEach(r => r.score = sc1(r.ai));
+    [...ps].sort((a,b)=>b.score-a.score).forEach((r,i) => r.place = i+1);
+    return;
+  }
   if(ps.length < 2){ ps.forEach(r => { r.score = 50; r.place = 1; }); return; }
   const ex = state.extraCols.filter(h => !/받은/.test(h));
   const feats = [ { w:.3, f:r=>kda(r.k,r.d,r.a) }, { w:.25, f:r=>r.kp }, ...ex.map(h => ({ w:.45/ex.length, f:r=>r.extra?.[h] || 0 })) ];
@@ -650,6 +717,7 @@ function renderLeaders(list){
   const col = re => state.extraCols.find(h => re.test(h));
   const avgOf = (h, label) => h && { label, v:p=>(p.extra[h] || 0)/p.g, show:v=>fmt1(v), min:true, sub:p=>`${p.g}전 평균` };
   const cats = [
+    Object.keys(MMR).length && { label:'최고 MMR', v:p=>MMR[p.name]?.mmr || 0, show:v=>Math.round(v).toLocaleString('ko-KR'), sub:p=>MMR[p.name]?.tier || '' },
     { label:'최다 출전', v:p=>p.g, unit:'판' },
     { label:'최고 승률', v:p=>p.rate, show:v=>v.toFixed(0)+'%', min:true, sub:p=>`${p.g}전 ${p.w}승` },
     { label:'최고 KDA', v:p=>p.kda, show:v=>v.toFixed(2), min:true, sub:p=>`${p.g}전` },
@@ -677,11 +745,14 @@ function renderLeaders(list){
 /* ---------- 랭킹 ---------- */
 function renderRank(){
   const list = playerStats(posRows());
-  const sorters = { rate:(a,b)=>b.rate-a.rate||b.g-a.g, g:(a,b)=>b.g-a.g, kda:(a,b)=>b.kda-a.kda, kp:(a,b)=>b.kpAvg-a.kpAvg, score:(a,b)=>b.score-a.score, mvp:(a,b)=>b.mvp-a.mvp||b.rate-a.rate };
+  const hasMmr = Object.keys(MMR).length > 0;
+  if(state.pSort === 'mmr' && !hasMmr) state.pSort = 'rate';
+  const sorters = { mmr:(a,b)=>(MMR[b.name]?.mmr ?? -1)-(MMR[a.name]?.mmr ?? -1)||b.rate-a.rate, rate:(a,b)=>b.rate-a.rate||b.g-a.g, g:(a,b)=>b.g-a.g, kda:(a,b)=>b.kda-a.kda, kp:(a,b)=>b.kpAvg-a.kpAvg, score:(a,b)=>b.score-a.score, mvp:(a,b)=>b.mvp-a.mvp||b.rate-a.rate };
   const rows = (state.minOnly ? list.filter(p => p.g >= CONFIG.MIN_GAMES) : list).sort(sorters[state.pSort]);
   const body = rows.map((p,i) => `<tr class="row" data-go="${esc(p.name)}">
-      <td class="rank t${i+1}">${i+1}</td>
+      ${(() => { const n = state.pSort === 'mmr' ? (MMR[p.name]?.rank || (MMR[p.name] ? i+1 : '–')) : i+1; return `<td class="rank t${n}">${n}</td>`; })()}
       <td><div class="who">${ci(p.main, 34, 'round')}<span>${esc(dn(p.name))}<br><span class="sub">${esc(p.mainPos || '')}</span></span></div></td>
+      ${hasMmr ? `<td>${tierBadge(MMR[p.name]?.tier, MMR[p.name]?.mmr) || '<span class="sub">미배치</span>'}</td>` : ''}
       <td>${rateBar(p.w, p.g)}</td>
       <td class="r"><span class="strong ${kdaCls(p.kda)}">${p.kda.toFixed(2)}</span><br><span class="sub">${fmt1(p.k/p.g)} / ${fmt1(p.d/p.g)} / ${fmt1(p.a/p.g)}</span></td>
       <td class="r"><span class="pill sm ${scCls(p.score)}">${p.score.toFixed(0)}</span></td>
@@ -697,7 +768,7 @@ function renderRank(){
   return home + renderLeaders(list) + `<div class="toolbar">${posSeg()}<span class="spacer"></span>
       <label><input type="checkbox" id="minOnly" ${state.minOnly?'checked':''}> ${CONFIG.MIN_GAMES}판 이상만</label></div>
     <div class="box scroll">${rows.length ? `<table>
-      <thead><tr><th class="rank">#</th><th>플레이어</th>${th('rate','승률',state.pSort)}${th('kda','KDA',state.pSort,'r')}${th('score','점수',state.pSort,'r')}${th('kp','킬관여',state.pSort,'r hide-m')}${th('mvp','MVP',state.pSort,'r hide-m')}<th class="hide-m">모스트</th><th>최근 ${CONFIG.FORM_LEN}경기</th></tr></thead>
+      <thead><tr><th class="rank">#</th><th>플레이어</th>${hasMmr ? th('mmr','티어',state.pSort) : ''}${th('rate','승률',state.pSort)}${th('kda','KDA',state.pSort,'r')}${th('score','점수',state.pSort,'r')}${th('kp','킬관여',state.pSort,'r hide-m')}${th('mvp','MVP',state.pSort,'r hide-m')}<th class="hide-m">모스트</th><th>최근 ${CONFIG.FORM_LEN}경기</th></tr></thead>
       <tbody>${body}</tbody></table>` : '<div class="empty">조건에 맞는 플레이어가 없어요.</div>'}</div>`;
 }
 
@@ -736,7 +807,7 @@ function matchBand(r){
       </div>
       ${statChips(r)}
     </div>
-    <div class="m-score"><span>내전 점수</span><span class="pill ${scCls(r.score)}">${r.score}</span><span>${r.place}등</span></div>
+    <div class="m-score"><span>${SCORE_NAME()}</span><span class="pill ${scCls(r.score)}">${r.score}</span><span>${r.place}등</span></div>
     <div class="m-teams">${team('blue')}${team('red')}</div>
     <button class="m-open" data-open-match="${esc(m.id)}" aria-expanded="${open}" aria-label="경기 상세">${ICON_DOWN}</button>
     ${open ? matchDetail(m, r.player) : ''}
@@ -808,7 +879,7 @@ function renderProfile(){
     });
     const subs = [
       { k:'평균 등수', v:`${S.placeAvg.toFixed(1)}등`, sub:'10명 중', t: S.placeAvg <= 3.5 ? 'good' : S.placeAvg > 6.5 ? 'bad' : '' },
-      luckLabel && { k:'팀운', v:luckLabel[0], sub:`상위 ${luckTop}%`, t:luckLabel[1], title:'같은 팀원들의 평균 내전 점수 기준' },
+      luckLabel && { k:'팀운', v:luckLabel[0], sub:`상위 ${luckTop}%`, t:luckLabel[1], title:`같은 팀원들의 평균 ${SCORE_NAME()} 기준` },
       lt && { k:'맞라인', v:`${(lw/lt*100).toFixed(0)}%`, sub:`${lw}승 ${lt-lw}패`, t: lw/lt >= .5 ? 'good' : 'bad', title:`같은 포지션 상대보다 ${laneCol}이 많았던 경기 비율` }
     ].filter(Boolean);
 
@@ -825,7 +896,7 @@ function renderProfile(){
           <div class="ring" style="background:conic-gradient(var(--win) ${S.rate}%, var(--loss) 0)"><span>${S.rate.toFixed(0)}%</span></div>
           <div class="c1-stat"><b>${S.g} 게임</b><span class="sub">${S.w}승 ${S.g-S.w}패</span></div>
           <div class="c1-stat"><b class="${kdaCls(S.kda)}">${S.kda.toFixed(2)} KDA</b><span class="sub">${fmt1(S.k/S.g)} / <span class="l">${fmt1(S.d/S.g)}</span> / ${fmt1(S.a/S.g)}</span></div>
-          <div class="c1-stat"><b style="color:var(--s-${scCls(S.score)})">${S.score.toFixed(0)}</b><span class="sub">내전 점수</span></div>
+          <div class="c1-stat"><b style="color:var(--s-${scCls(S.score)})">${S.score.toFixed(0)}</b><span class="sub">${SCORE_NAME()}</span></div>
         </div>
         <div class="c1-subs">${subs.map(x => `<div class="scard c1-sub ${x.t}"${x.title?` title="${esc(x.title)}"`:''}><span class="k">${x.k}</span><b>${x.v}</b><span class="sub">${x.sub}</span></div>`).join('')}</div>
       </div>
@@ -845,6 +916,8 @@ function renderProfile(){
       <span class="av">${ci(P.main, 72)}<span class="lv">${rank>=0?`${rank+1}위`:`${P.g}전`}</span></span>
       <div><h1>${tagged(REG.has(P.name) ? DISP[P.name] : (accountsOf(P.name)[0]?.[0] || P.name))}</h1>
         <div class="sub">${P.g}전 ${P.w}승 ${P.g-P.w}패, 승률 ${P.rate.toFixed(0)}%, 최장 ${P.streak}연승</div>
+        ${MMR[P.name] ? (() => { const M = MMR[P.name], nt = nextTier(M.mmr);
+          return `<div class="mmr-line">${tierBadge(M.tier, M.mmr)}${M.rank ? `<span class="sub">MMR ${M.rank}위</span>` : ''}${nt ? `<span class="mmr-next"><span class="track"><i style="width:${Math.max(4, Math.min(100, (M.mmr-nt.from)/(nt.to-nt.from)*100))}%;background:${tierColor(nt.name)}"></i></span><span class="sub">${esc(nt.name)}까지 ${nt.left}</span></span>` : ''}</div>`; })() : ''}
         ${accountsOf(P.name).length > 1 ? `<div class="accts"><button class="acct-toggle" data-accts aria-expanded="${state.showAccts}">롤 계정 ${accountsOf(P.name).length}개 ${ICON_DOWN}</button>
           ${state.showAccts ? `<div class="acct-list">${accountsOf(P.name).map(([a,n])=>`<span class="acct">${tagged(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}</div>` : ''}
         <div class="hero-meta">${POS_ORDER.filter(x=>P.pos[x]).sort((a,b)=>P.pos[b].g-P.pos[a].g).slice(0,2).map(x=>`<span class="pos-chip">${x}</span>`).join('')}</div>
@@ -935,6 +1008,19 @@ function toCsvUrl(url){
   if(CONFIG.SHEET_NAME) out += `&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}`; else if(gid) out += `&gid=${gid}`;
   return out;
 }
+// Apps Script 창구면 ?tab=mmr, 시트 주소면 MMR_SHEET 탭을 읽어요. 실패해도 나머지 화면은 그대로 떠요
+async function loadMmr(url){
+  let mu = null;
+  if(/script\.google\.com/.test(url)) mu = url + (url.includes('?')?'&':'?') + 'tab=mmr';
+  else if(CONFIG.MMR_SHEET && /\/spreadsheets\/d\//.test(url)) mu = url.replace(/&(sheet|gid)=[^&]*/g,'') + '&sheet=' + encodeURIComponent(CONFIG.MMR_SHEET);
+  if(!mu) return null;
+  try{
+    const res = await fetch(mu + '&t=' + Date.now());
+    if(!res.ok) return null;
+    const text = await res.text();
+    return /^error/i.test(text) ? null : parseMmr(text);
+  }catch(e){ console.warn('[내전 기록] MMR 탭을 불러오지 못했어요', e); return null; }
+}
 async function load(){
   const icons = loadIcons();
   // 시트 주소는 관리자만 이 파일의 CONFIG.CSV_URL에서 바꿀 수 있어요 (화면에서는 변경 불가)
@@ -948,6 +1034,7 @@ async function load(){
       const res = await fetch(url + (url.includes('?')?'&':'?') + 't=' + Date.now());
       if(!res.ok) throw new Error(`시트를 불러오지 못했어요 (HTTP ${res.status}). 시트 공유가 '링크가 있는 모든 사용자'로 되어 있는지 확인하세요.`);
       state.rows = normalize(parseCSV(await res.text())); setNotice('');
+      MMR_RAW = await loadMmr(url);
     }catch(e){
       state.rows = [];
       const msg = e instanceof TypeError
@@ -957,7 +1044,7 @@ async function load(){
       console.error('[내전 기록] 시트 요청 실패:', url, e);
     }
   }
-  buildMatches(); buildNames(); render();
+  buildMatches(); buildNames(); buildMmr(); render();
   await icons; render();
 }
 
