@@ -150,19 +150,28 @@ tbody tr.row:hover td{background:var(--surface2)}
 .tag{color:var(--muted);font-weight:400;font-size:.8em;opacity:.75;margin-left:3px;letter-spacing:0}
 h1 .tag{font-size:.62em}
 
-.tier{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--tc);background:color-mix(in srgb, var(--tc) 12%, transparent);border:1px solid color-mix(in srgb, var(--tc) 35%, transparent);padding:1px 8px;border-radius:999px;white-space:nowrap}
+.tier{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:var(--tc);background:var(--tb);border:1px solid var(--tl);padding:1px 8px 1px 4px;border-radius:999px;white-space:nowrap}
 .tier b{color:var(--ink);font-weight:800}
-.tierbox{margin-top:10px;max-width:560px}
-.tb-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.ladder{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px;margin-top:10px}
+.emb{width:var(--s);height:var(--s);flex:none;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--tb);overflow:hidden}
+.emb img{width:150%;height:150%;object-fit:contain}
+.emb:has(img){background:none;border:0}
+.emb{border:2px solid var(--tc)}
+.tier-cell{text-align:center;width:56px}
+td.tier-cell .emb{vertical-align:middle}
+.tiercard{border-top:3px solid var(--tc)}
+.tc-main{display:flex;gap:14px;align-items:center;padding:14px 16px 4px}
+.tc-name{font-size:17px;font-weight:800;color:var(--tc);line-height:1.2}
+.tc-mmr{font-size:22px;font-weight:800;line-height:1.3}
+.tc-mmr .sub{font-size:12px;font-weight:600}
+.ladder{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px;padding:12px 16px 0}
 .lad{position:relative;display:flex;flex-direction:column;gap:4px}
 .lad::before{content:"";height:6px;border-radius:3px;background:var(--surface2);border:1px solid var(--line)}
-.lad.past::before{background:color-mix(in srgb, var(--tc) 35%, transparent);border-color:transparent}
+.lad.past::before{background:var(--tl);border-color:transparent}
 .lad.now::before{background:var(--tc);border-color:transparent}
-.lad span{font-size:10.5px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lad span{font-size:10px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .lad.now span{color:var(--tc);font-weight:800}
 .lad .mk{position:absolute;top:-3px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:3px solid var(--ink);transform:translateX(-50%)}
-.tb-desc{margin:8px 0 0;font-size:13px}
+.tb-desc{margin:0;padding:10px 16px 14px;font-size:13px;line-height:1.5}
 
 /* 프로필: 요약 */
 .sum{padding:12px;margin-bottom:12px}
@@ -354,7 +363,7 @@ h1 .tag{font-size:.62em}
    매핑되지 않은 숫자 컬럼(딜량, 골드 등)은 부문별 1위에 자동 추가됩니다
    ============================================================ */
 const CONFIG = {
-  CSV_URL: 'https://script.google.com/macros/s/AKfycbzxbEVgSwnZJzPH86_eOsAlPxCcqJHu2DeWvsfRu6fUjVn-67ZfRpBrdBje4Ah6C3Lo/exec',
+  CSV_URL: 'https://docs.google.com/spreadsheets/d/1fDlMWHmB5ga1z_uXAErrsGShFFqy4Bo6pwEdnv5WfDs/edit?usp=sharing',
   SHEET_NAME: '',         // 기록 탭 이름. 비우면 첫 번째 탭
   START_MMR: 2000,        // 모든 유저의 시작 MMR (여기에 경기별 MMR 변화량을 더해요)
   // 기본 티어표 (심콩_랭킹 탭의 티어표를 불러오면 그 값을 우선 사용)
@@ -567,7 +576,14 @@ function buildPos(){
 }
 const TIER_STYLE = { '챌린저':'#E0A82E', '그랜드마스터':'#D9534F', '마스터':'#9B59D0', '다이아몬드':'#3D7FE0', '에메랄드':'#1FA67A', '플래티넘':'#2AA6A0', '골드':'#C99A2E', '실버':'#8A95A5', '브론즈':'#A0694A', '아이언':'#6B6B6B' };
 const tierColor = t => { const k = Object.keys(TIER_STYLE).find(x => String(t||'').includes(x) || x.includes(String(t||'').slice(0,2))); return k ? TIER_STYLE[k] : 'var(--muted)'; };
-const tierBadge = (t, mmr) => t ? `<span class="tier" style="--tc:${tierColor(t)}">${esc(t)}${mmr!=null?` <b>${Math.round(mmr)}</b>`:''}</span>` : '';
+const TIER_EN = { '챌린저':'challenger', '그랜드마스터':'grandmaster', '마스터':'master', '다이아몬드':'diamond', '에메랄드':'emerald', '플래티넘':'platinum', '골드':'gold', '실버':'silver', '브론즈':'bronze', '아이언':'iron' };
+const tierKey = t => Object.keys(TIER_STYLE).find(x => String(t||'').includes(x) || x.includes(String(t||'').slice(0,2)));
+// 티어 색을 배경·테두리용 반투명으로 (예: #3D7FE0 → #3D7FE01F)
+const tierVars = t => { const c = tierColor(t); return c.startsWith('#') ? `--tc:${c};--tb:${c}1F;--tl:${c}59` : '--tc:var(--muted);--tb:var(--surface2);--tl:var(--line)'; };
+// 라이엇 공식 랭크 엠블럼 (Community Dragon). 못 불러오면 티어 색 원으로 대체
+const emblem = (t, size=20) => { const k = tierKey(t), en = k && TIER_EN[k];
+  return en ? `<span class="emb" style="${tierVars(t)};--s:${size}px"><img src="https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem/emblem-${en}.png" alt="" loading="lazy" onerror="this.remove()"></span>` : ''; };
+const tierBadge = (t, mmr) => t ? `<span class="tier" style="${tierVars(t)}">${emblem(t,18)}${esc(t)}${mmr!=null?` <b>${Math.round(mmr)}</b>`:''}</span>` : '';
 function splitBlocks(table){
   const w = Math.max(...table.map(r => r.length));
   const empty = c => table.every(r => !String(r[c] ?? '').trim());
@@ -822,7 +838,7 @@ function renderRank(){
   const body = rows.map((p,i) => `<tr class="row" data-go="${esc(p.name)}">
       ${(() => { const n = state.pSort === 'mmr' ? (MMR[p.name]?.rank || (MMR[p.name] ? i+1 : '–')) : i+1; return `<td class="rank t${n}">${n}</td>`; })()}
       <td><div class="who">${ci(p.main, 34, 'round')}<span>${esc(dn(p.name))}<br><span class="sub">${esc(p.mainPos || '')}</span></span></div></td>
-      ${hasMmr ? `<td>${tierBadge(MMR[p.name]?.tier, MMR[p.name]?.mmr) || '<span class="sub">미배치</span>'}</td>` : ''}
+      ${hasMmr ? `<td class="tier-cell" title="${MMR[p.name] ? esc(MMR[p.name].tier) + ' ' + Math.round(MMR[p.name].mmr) : '미배치'}">${MMR[p.name] ? emblem(MMR[p.name].tier, 30) : '<span class="sub">-</span>'}</td>` : ''}
       <td>${rateBar(p.w, p.g)}</td>
       <td class="r"><span class="strong ${kdaCls(p.kda)}">${p.kda.toFixed(2)}</span><br><span class="sub">${fmt1(p.k/p.g)} / ${fmt1(p.d/p.g)} / ${fmt1(p.a/p.g)}</span></td>
       <td class="r"><span class="pill sm ${scCls(p.score)}">${p.score.toFixed(0)}</span></td>
@@ -838,7 +854,7 @@ function renderRank(){
   return home + renderLeaders(list) + `<div class="toolbar">${posSeg()}<span class="spacer"></span>
       <label><input type="checkbox" id="minOnly" ${state.minOnly?'checked':''}> ${CONFIG.MIN_GAMES}판 이상만</label></div>
     <div class="box scroll">${rows.length ? `<table>
-      <thead><tr><th class="rank">#</th><th>플레이어</th>${hasMmr ? th('mmr','티어',state.pSort) : ''}${th('rate','승률',state.pSort)}${th('kda','KDA',state.pSort,'r')}${th('score','점수',state.pSort,'r')}${th('kp','킬관여',state.pSort,'r hide-m')}${th('mvp','MVP',state.pSort,'r hide-m')}<th class="hide-m">모스트</th><th>최근 ${CONFIG.FORM_LEN}경기</th></tr></thead>
+      <thead><tr><th class="rank">#</th><th>플레이어</th>${hasMmr ? th('mmr','티어',state.pSort,'tier-cell') : ''}${th('rate','승률',state.pSort)}${th('kda','KDA',state.pSort,'r')}${th('score','점수',state.pSort,'r')}${th('kp','킬관여',state.pSort,'r hide-m')}${th('mvp','MVP',state.pSort,'r hide-m')}<th class="hide-m">모스트</th><th>최근 ${CONFIG.FORM_LEN}경기</th></tr></thead>
       <tbody>${body}</tbody></table>` : '<div class="empty">조건에 맞는 플레이어가 없어요.</div>'}</div>`;
 }
 
@@ -911,13 +927,21 @@ function tierBlock(M){
     : t.frac < 1/3 ? `${t.cur.name} 구간에 막 들어온 위치예요.`
     : t.frac < 2/3 ? `${t.cur.name} 구간의 중간쯤이에요.`
     : `${t.cur.name} 구간 상단이라 승급이 가까워요.`;
-  const ladder = t.asc.map((x,k) => `<div class="lad ${k < t.idx ? 'past' : k === t.idx ? 'now' : ''}" style="--tc:${tierColor(x.name)}" title="${esc(x.name)} ${x.min}~">
+  const ladder = t.asc.map((x,k) => `<div class="lad ${k < t.idx ? 'past' : k === t.idx ? 'now' : ''}" style="${tierVars(x.name)}" title="${esc(x.name)} ${x.min}점부터">
       ${k === t.idx ? `<i class="mk" style="left:${Math.max(6, Math.min(94, t.frac*100))}%"></i>` : ''}<span>${esc(SHORT[x.name] || x.name)}</span></div>`).join('');
-  return `<div class="tierbox">
-    <div class="tb-top">${tierBadge(M.tier, M.mmr)}<span class="sub">${M.total}명 중 ${M.rank}위, 상위 ${top}%</span></div>
+  return `<section class="box tiercard" style="${tierVars(M.tier)}">
+    <div class="box-h"><h3>티어</h3><span class="sub">${M.total}명 중 ${M.rank}위</span></div>
+    <div class="tc-main">
+      ${emblem(M.tier, 64) || `<span class="emb" style="${tierVars(M.tier)};--s:64px"></span>`}
+      <div>
+        <div class="tc-name">${esc(M.tier)}</div>
+        <div class="tc-mmr">${Math.round(M.mmr).toLocaleString('ko-KR')} <span class="sub">MMR</span></div>
+        <div class="sub">상위 ${top}%, 시작 ${CONFIG.START_MMR}에서 ${M.mmr >= CONFIG.START_MMR ? '+' : ''}${Math.round(M.mmr - CONFIG.START_MMR)}</div>
+      </div>
+    </div>
     <div class="ladder">${ladder}</div>
-    <p class="tb-desc">${where}${t.up ? ` <b>${esc(t.up.name)}</b>까지 <b>${t.left}점</b> 남았어요.` : ''} <span class="sub">시작 MMR ${CONFIG.START_MMR}에서 ${M.mmr >= CONFIG.START_MMR ? '+' : ''}${Math.round(M.mmr - CONFIG.START_MMR)}</span></p>
-  </div>`;
+    <p class="tb-desc">${where}${t.up ? ` <b style="color:${tierColor(t.up.name)}">${esc(t.up.name)}</b>까지 <b>${t.left}점</b> 남았어요.` : ''}</p>
+  </section>`;
 }
 function renderProfile(){
   const all = allPlayers().sort((a,b)=>b.g-a.g);
@@ -1009,7 +1033,6 @@ function renderProfile(){
       <span class="av">${ci(P.main, 72)}<span class="lv">${rank>=0?`${rank+1}위`:`${P.g}전`}</span></span>
       <div><h1>${tagged(REG.has(P.name) ? DISP[P.name] : (accountsOf(P.name)[0]?.[0] || P.name))}</h1>
         <div class="sub">${P.g}전 ${P.w}승 ${P.g-P.w}패, 승률 ${P.rate.toFixed(0)}%, 최장 ${P.streak}연승</div>
-        ${MMR[P.name] ? tierBlock(MMR[P.name]) : ''}
         ${accountsOf(P.name).length > 1 ? `<div class="accts"><button class="acct-toggle" data-accts aria-expanded="${state.showAccts}">롤 계정 ${accountsOf(P.name).length}개 ${ICON_DOWN}</button>
           ${state.showAccts ? `<div class="acct-list">${accountsOf(P.name).map(([a,n])=>`<span class="acct">${tagged(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}</div>` : ''}
         <div class="hero-meta">${POS_ORDER.filter(x=>P.pos[x]).sort((a,b)=>P.pos[b].g-P.pos[a].g).slice(0,2).map(x=>`<span class="pos-chip">${x}</span>`).join('')}</div>
@@ -1024,6 +1047,7 @@ function renderProfile(){
     </section>
     <div class="prof">
       <div class="side-col">
+        ${MMR[P.name] ? tierBlock(MMR[P.name]) : ''}
         <section class="box"><div class="box-h"><h3>잘 맞는 조합 TOP3</h3><span class="sub">같은 팀 승률</span></div>${comboList(bestDuo, true)}</section>
         <section class="box"><div class="box-h"><h3>안 맞는 조합 TOP3</h3><span class="sub">같은 팀 승률</span></div>${comboList(worstDuo, false)}</section>
         <section class="box"><div class="box-h"><h3>챔피언</h3><span class="sub">${P.champList.length}개</span></div>
