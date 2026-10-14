@@ -152,10 +152,17 @@ h1 .tag{font-size:.62em}
 
 .tier{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--tc);background:color-mix(in srgb, var(--tc) 12%, transparent);border:1px solid color-mix(in srgb, var(--tc) 35%, transparent);padding:1px 8px;border-radius:999px;white-space:nowrap}
 .tier b{color:var(--ink);font-weight:800}
-.mmr-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:8px}
-.mmr-next{display:inline-flex;align-items:center;gap:8px}
-.mmr-next .track{width:120px;height:6px;border-radius:3px;background:var(--surface2);overflow:hidden;border:1px solid var(--line)}
-.mmr-next .track i{display:block;height:100%;border-radius:3px}
+.tierbox{margin-top:10px;max-width:560px}
+.tb-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ladder{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:3px;margin-top:10px}
+.lad{position:relative;display:flex;flex-direction:column;gap:4px}
+.lad::before{content:"";height:6px;border-radius:3px;background:var(--surface2);border:1px solid var(--line)}
+.lad.past::before{background:color-mix(in srgb, var(--tc) 35%, transparent);border-color:transparent}
+.lad.now::before{background:var(--tc);border-color:transparent}
+.lad span{font-size:10.5px;color:var(--muted);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lad.now span{color:var(--tc);font-weight:800}
+.lad .mk{position:absolute;top:-3px;width:12px;height:12px;border-radius:50%;background:var(--surface);border:3px solid var(--ink);transform:translateX(-50%)}
+.tb-desc{margin:8px 0 0;font-size:13px}
 
 /* 프로필: 요약 */
 .sum{padding:12px;margin-bottom:12px}
@@ -347,8 +354,11 @@ h1 .tag{font-size:.62em}
    매핑되지 않은 숫자 컬럼(딜량, 골드 등)은 부문별 1위에 자동 추가됩니다
    ============================================================ */
 const CONFIG = {
-  CSV_URL: 'https://script.google.com/macros/s/AKfycbzxbEVgSwnZJzPH86_eOsAlPxCcqJHu2DeWvsfRu6fUjVn-67ZfRpBrdBje4Ah6C3Lo/exec',
+  CSV_URL: 'https://docs.google.com/spreadsheets/d/1fDlMWHmB5ga1z_uXAErrsGShFFqy4Bo6pwEdnv5WfDs/edit?usp=sharing',
   SHEET_NAME: '',         // 기록 탭 이름. 비우면 첫 번째 탭
+  START_MMR: 2000,        // 모든 유저의 시작 MMR (여기에 경기별 MMR 변화량을 더해요)
+  // 기본 티어표 (심콩_랭킹 탭의 티어표를 불러오면 그 값을 우선 사용)
+  TIERS: [['챌린저',3000],['그랜드마스터',2800],['마스터',2100],['다이아몬드',1700],['에메랄드',1300],['플래티넘',900],['골드',500],['실버',100],['브론즈',0]],
   MMR_SHEET: '',          // 시트 주소를 직접 쓸 때만: MMR 랭킹 탭 이름 (Apps Script 창구를 쓰면 비워두세요)
   MIN_GAMES: 3,
   CLEAN_NICK: true,       // 디스코드 닉네임에서 나이·티어를 떼고 닉네임만 표시
@@ -363,7 +373,8 @@ const CONFIG = {
     match:  ['매치id','경기id','매치','경기번호','경기','게임','matchid','match','game','id'],
     dur:    ['게임시간','경기시간','플레이시간','duration'],
     team:   ['팀','진영','side','team'],
-    ai:     ['ai-score','aiscore','ai스코어','ai점수','내전점수'],
+    ai:     ['ai-score','aiscore','ai스코어','ai점수','내전점수'],   // '심콩 AI-Score'처럼 앞에 이름이 붙어도 인식
+    mmrd:   ['mmr변화량','mmr변동','mmr증감','mmr변화','변화량'],
     discordName: ['디스코드닉네임','디스코드이름','discordnickname','discordname'],
     discordId:   ['디스코드id','디스코드고유id','discordid','discorduid'],
     player: ['소환사명','플레이어','닉네임','이름','소환사','소환사이름','summoner','summonername','riotid','player','name'],
@@ -437,6 +448,9 @@ function normalize(table){
     idx[key] = head.findIndex(h => aliases.includes(h));
     if(idx[key] < 0 && ['player','result'].includes(key)) missing.push(aliases[0]);
   }
+  // 이름이 정확히 같지 않아도 핵심 단어가 들어 있으면 인식 (예: '심콩 AI-Score', '심콩 MMR 변화량')
+  if(idx.ai < 0) idx.ai = head.findIndex(h => /ai-?score|ai스코어/.test(h));
+  if(idx.mmrd < 0) idx.mmrd = head.findIndex(h => /mmr(변화|변동|증감)/.test(h));
   // 헤더 이름으로 못 찾으면 시트 구조대로 T열(19) = 디스코드 닉네임, U열(20) = 디스코드 ID
   if(idx.discordName < 0 && table[0].length > 19) idx.discordName = 19;
   if(idx.discordId < 0 && table[0].length > 20) idx.discordId = 20;
@@ -459,13 +473,15 @@ function normalize(table){
       match: get(r,'match') || get(r,'date') || String(Math.floor(i/10)+1),
       team: /레드|red|^r$/.test(team) ? 'red' : 'blue',
       // 유저 식별 키: 디스코드 ID 우선, 미등록이면 롤 소환사명으로 임시 구분
-      player: get(r,'discordId') || get(r,'player'),
+      // (시트가 미등록 유저의 T·U열에 소환사명을 넣어두는 경우도 미등록으로 처리)
+      player: (get(r,'discordId') && get(r,'discordId') !== get(r,'player') ? get(r,'discordId') : '') || get(r,'player'),
       summoner: get(r,'player'),
-      discordName: get(r,'discordName'),
+      discordName: get(r,'discordName') && get(r,'discordName') !== get(r,'player') ? get(r,'discordName') : '',
       champ: get(r,'champ') || '?',
       pos: POS_ALIAS[posRaw.toLowerCase()] || posRaw || '?',
       win: ['승','승리','w','win','1','true','o'].includes(res),
       k: +get(r,'k') || 0, d: +get(r,'d') || 0, a: +get(r,'a') || 0,
+      mmrd: get(r,'mmrd') === '' ? null : (+String(get(r,'mmrd')).replace(/[,\s+]/g,'') || 0),
       ai: get(r,'ai') === '' ? null : (+String(get(r,'ai')).replace(/[,%\s]/g,'') || 0),
       extra: Object.fromEntries(extraCols.map(({h,i}) => [h, toNum(r[i]) || 0]))
     };
@@ -527,7 +543,28 @@ const dn = k => NAMES[k] || noTag(k);
 
 /* ---------- MMR 랭킹 (시트에서 계산한 값) ----------
    탭 구성: 왼쪽 표(순위, 대표 닉네임, 최종 MMR, 티어 …) + 빈 열 + 오른쪽 티어표(티어표, MMR 기준) */
-let MMR = {}, TIERS = [], MMR_RAW = null;
+let MMR = {}, TIERS = [], MMR_RAW = null, POS_RAW = null, POS = {};
+// 포지션_분석 탭: 소환사명·라인별 게임수/승/패/KDA/평균 AI-Score → 유저별로 합산 (본캐·부캐 합치기)
+function parsePos(text){
+  const t = parseCSV(text); if(t.length < 2) return null;
+  const h = t[0].map(x => x.toLowerCase().replace(/\s/g,''));
+  const f = re => h.findIndex(x => re.test(x));
+  const c = { name:f(/(소환사명|닉네임|플레이어)/), key:f(/고유id|key/), pos:f(/^(라인|포지션)/), g:f(/게임수|판수/), w:f(/^승$/), kda:f(/^kda/), ai:f(/ai-?score|점수/) };
+  if(c.name < 0 || c.pos < 0 || c.g < 0) return null;
+  const num = v => +String(v ?? '').replace(/[,%\s]/g,'') || 0;
+  return t.slice(1).map(r => ({ name:r[c.name], key:c.key >= 0 ? r[c.key] : '', pos:POS_ALIAS[String(r[c.pos]).toLowerCase()] || r[c.pos], g:num(r[c.g]), w:c.w>=0?num(r[c.w]):0, kda:c.kda>=0?num(r[c.kda]):null, ai:c.ai>=0?num(r[c.ai]):null })).filter(r => r.name && r.g > 0);
+}
+function buildPos(){
+  POS = {}; if(!POS_RAW) return;
+  const idx = keyIndex();
+  POS_RAW.forEach(r => {
+    const k = (r.key && ACCOUNTS[r.key] ? r.key : '') || idx[r.name] || idx[noTag(r.name)]; if(!k) return;
+    const x = ((POS[k] ||= {})[r.pos] ||= { g:0, w:0, kdaW:0, aiW:0, kdaN:0, aiN:0 });
+    x.g += r.g; x.w += r.w;
+    if(r.kda !== null){ x.kdaW += r.kda * r.g; x.kdaN += r.g; }
+    if(r.ai !== null){ x.aiW += r.ai * r.g; x.aiN += r.g; }
+  });
+}
 const TIER_STYLE = { '챌린저':'#E0A82E', '그랜드마스터':'#D9534F', '마스터':'#9B59D0', '다이아몬드':'#3D7FE0', '에메랄드':'#1FA67A', '플래티넘':'#2AA6A0', '골드':'#C99A2E', '실버':'#8A95A5', '브론즈':'#A0694A', '아이언':'#6B6B6B' };
 const tierColor = t => { const k = Object.keys(TIER_STYLE).find(x => String(t||'').includes(x) || x.includes(String(t||'').slice(0,2))); return k ? TIER_STYLE[k] : 'var(--muted)'; };
 const tierBadge = (t, mmr) => t ? `<span class="tier" style="--tc:${tierColor(t)}">${esc(t)}${mmr!=null?` <b>${Math.round(mmr)}</b>`:''}</span>` : '';
@@ -547,25 +584,58 @@ function parseMmr(text){
   if(!main || main.length < 2) return null;
   const h = main[0].map(x => x.toLowerCase().replace(/\s/g,''));
   const col = names => h.findIndex(x => names.includes(x));
-  const ci_ = { rank:col(['순위','rank']), name:col(['대표닉네임','닉네임','소환사명','플레이어','name']), mmr:col(['최종mmr','mmr']), tier:col(['티어','tier']) };
+  const ci_ = { rank:col(['순위','rank']), name:col(['대표닉네임','닉네임','소환사명','플레이어','name']), mmr:col(['최종mmr','mmr']), tier:col(['티어','tier']), key:h.findIndex(x => /고유id|key/.test(x)) };
   if(ci_.name < 0 || ci_.mmr < 0) return null;
-  const rows = main.slice(1).map(r => ({ rank:+r[ci_.rank] || null, name:r[ci_.name], mmr:+String(r[ci_.mmr]).replace(/,/g,'') || 0, tier:ci_.tier >= 0 ? r[ci_.tier] : '' })).filter(r => r.name);
+  const rows = main.slice(1).map(r => ({ rank:+r[ci_.rank] || null, name:r[ci_.name], key:ci_.key >= 0 ? r[ci_.key] : '', mmr:+String(r[ci_.mmr]).replace(/,/g,'') || 0, tier:ci_.tier >= 0 ? r[ci_.tier] : '' })).filter(r => r.name);
   const tiers = (tierTbl || []).slice(1).map(r => ({ name:r[0], min:+String(r[1]).replace(/,/g,'') })).filter(t => t.name && !isNaN(t.min)).sort((a,b)=>b.min-a.min);
   return { rows, tiers };
 }
-// 대표 닉네임 → 사이트의 유저 키 (롤 계정, 디스코드 닉네임 순으로 찾기)
-function buildMmr(){
-  MMR = {}; TIERS = MMR_RAW?.tiers || [];
-  if(!MMR_RAW) return;
+// 시트 탭의 소환사명 → 사이트 유저 키 (롤 계정, 디스코드 닉네임 순으로 찾기)
+function keyIndex(){
   const idx = {};
   Object.keys(ACCOUNTS).forEach(k => {
     Object.keys(ACCOUNTS[k]).forEach(a => { idx[a] ||= k; idx[noTag(a)] ||= k; });
     idx[dn(k)] ||= k; if(DISP[k]) idx[DISP[k]] ||= k;
   });
-  MMR_RAW.rows.forEach(r => {
-    const k = idx[r.name] || idx[noTag(r.name)];
-    if(k && (!MMR[k] || r.mmr > MMR[k].mmr)) MMR[k] = r;
-  });
+  return idx;
+}
+// MMR: 심콩_랭킹 탭 값이 기준. 탭을 못 불러오면 2000 + 경기별 MMR 변화량 합계로 계산
+function buildMmr(){
+  MMR = {};
+  TIERS = (MMR_RAW?.tiers?.length ? MMR_RAW.tiers : CONFIG.TIERS.map(([name,min]) => ({ name, min }))).slice().sort((a,b)=>b.min-a.min);
+  const tierOf = v => TIERS.find(t => v >= t.min)?.name || TIERS[TIERS.length-1]?.name || '';
+  if(MMR_RAW?.rows?.length){
+    // 심콩_랭킹 탭 값을 그대로 사용 (순위·최종 MMR·티어)
+    const idx = keyIndex();
+    // 고유 ID(Key)로 바로 연결하고, 키가 없을 때만 닉네임으로 찾아요
+    MMR_RAW.rows.forEach(r => { const k = (r.key && ACCOUNTS[r.key] ? r.key : '') || idx[r.name] || idx[noTag(r.name)]; if(k && (!MMR[k] || r.mmr > MMR[k].mmr)) MMR[k] = { mmr:r.mmr, tier:r.tier, rank:r.rank, sheet:true }; });
+    Object.values(MMR).forEach(v => { v.tier ||= tierOf(v.mmr); });
+  }
+  // 시트 랭킹에 아직 없는 유저(대시보드 탭 갱신 전에 새로 들어온 사람)는 2000 + 변화량 합계로 채워요
+  if(state.rows.some(r => r.mmrd != null)){
+    const calc = {};
+    state.rows.forEach(r => { calc[r.player] = (calc[r.player] ?? CONFIG.START_MMR) + (r.mmrd || 0); });
+    Object.entries(calc).forEach(([k,v]) => { if(!MMR[k]) MMR[k] = { mmr:v, tier:tierOf(v) }; });
+  }
+  if(Object.keys(MMR).length){
+    // 순위는 MMR 기준으로 다시 매겨요 (시트의 RANK와 같은 방식, 같은 점수는 같은 순위)
+    const list = Object.values(MMR).sort((a,b)=>b.mmr-a.mmr);
+    list.forEach((v,i) => { v.rank = i && v.mmr === list[i-1].mmr ? list[i-1].rank : i+1; v.total = list.length; });
+    return;
+  }
+  if(state.rows.some(r => r.mmrd != null)){
+    state.rows.forEach(r => { (MMR[r.player] ||= { mmr:CONFIG.START_MMR }).mmr += r.mmrd || 0; });
+  }
+  // 티어와 순위 (같은 MMR은 같은 순위)
+  const list = Object.entries(MMR).sort((a,b)=>b[1].mmr-a[1].mmr);
+  list.forEach(([k,v], i) => { v.tier = tierOf(v.mmr); v.rank = i && v.mmr === list[i-1][1].mmr ? list[i-1][1].rank : i+1; v.total = list.length; });
+}
+// 현재 티어 구간과 그 안에서의 위치
+function tierSpot(mmr){
+  const asc = [...TIERS].reverse();
+  const i = asc.findIndex((t,k) => mmr >= t.min && (k === asc.length-1 || mmr < asc[k+1].min));
+  const cur = asc[Math.max(0,i)], up = asc[i+1];
+  return { idx:Math.max(0,i), cur, up, frac: up ? (mmr-cur.min)/(up.min-cur.min) : 1, left: up ? Math.ceil(up.min-mmr) : 0, asc };
 }
 function nextTier(mmr){
   const up = [...TIERS].reverse().find(t => t.min > mmr);
@@ -680,7 +750,7 @@ function playerStats(rows){
     const p = map[r.player] ||= { name:r.player, g:0, w:0, k:0, d:0, a:0, kp:0, mvp:0, games:[], pos:{}, champs:{}, extra:{} };
     p.g++; p.w += r.win; p.k += r.k; p.d += r.d; p.a += r.a; p.kp += r.kp || 0; p.mvp += r.mvp ? 1 : 0; p.sc = (p.sc||0) + (r.score||0); p.pl = (p.pl||0) + (r.place||0);
     p.games.push(r);
-    (p.pos[r.pos] ||= {g:0,w:0}); p.pos[r.pos].g++; p.pos[r.pos].w += r.win;
+    const ps = p.pos[r.pos] ||= {g:0,w:0,k:0,d:0,a:0,sc:0}; ps.g++; ps.w += r.win; ps.k += r.k; ps.d += r.d; ps.a += r.a; ps.sc += r.score || 0;
     const c = p.champs[r.champ] ||= {g:0,w:0,k:0,d:0,a:0}; c.g++; c.w += r.win; c.k += r.k; c.d += r.d; c.a += r.a;
     for(const [h,v] of Object.entries(r.extra || {})) p.extra[h] = (p.extra[h] || 0) + v;
   });
@@ -834,6 +904,21 @@ function dayGroups(games){
     return `<div class="day-h"><b>${esc(ago(gp.date))}</b><span>${n}게임</span><i>/</i><span>${w}승 ${n-w}패</span><i>/</i><span style="color:${rateColor(w/n*100)}">${(w/n*100).toFixed(0)}%</span><i>/</i><span class="pill sm ${scCls(sc)}">${sc.toFixed(0)}</span>${min?`<i>/</i><span>${Math.round(min)}분</span>`:''}</div>` + gp.list.map(matchBand).join('');
   }).join('');
 }
+const SHORT = { '브론즈':'브론즈', '실버':'실버', '골드':'골드', '플래티넘':'플래', '에메랄드':'에메', '다이아몬드':'다이아', '마스터':'마스터', '그랜드마스터':'그마', '챌린저':'챌린저', '아이언':'아이언' };
+function tierBlock(M){
+  const t = tierSpot(M.mmr), top = Math.max(1, Math.round(M.rank / M.total * 100));
+  const where = !t.up ? '최상위 티어예요.'
+    : t.frac < 1/3 ? `${t.cur.name} 구간에 막 들어온 위치예요.`
+    : t.frac < 2/3 ? `${t.cur.name} 구간의 중간쯤이에요.`
+    : `${t.cur.name} 구간 상단이라 승급이 가까워요.`;
+  const ladder = t.asc.map((x,k) => `<div class="lad ${k < t.idx ? 'past' : k === t.idx ? 'now' : ''}" style="--tc:${tierColor(x.name)}" title="${esc(x.name)} ${x.min}~">
+      ${k === t.idx ? `<i class="mk" style="left:${Math.max(6, Math.min(94, t.frac*100))}%"></i>` : ''}<span>${esc(SHORT[x.name] || x.name)}</span></div>`).join('');
+  return `<div class="tierbox">
+    <div class="tb-top">${tierBadge(M.tier, M.mmr)}<span class="sub">${M.total}명 중 ${M.rank}위, 상위 ${top}%</span></div>
+    <div class="ladder">${ladder}</div>
+    <p class="tb-desc">${where}${t.up ? ` <b>${esc(t.up.name)}</b>까지 <b>${t.left}점</b> 남았어요.` : ''} <span class="sub">시작 MMR ${CONFIG.START_MMR}에서 ${M.mmr >= CONFIG.START_MMR ? '+' : ''}${Math.round(M.mmr - CONFIG.START_MMR)}</span></p>
+  </div>`;
+}
 function renderProfile(){
   const all = allPlayers().sort((a,b)=>b.g-a.g);
   const search = searchBox();
@@ -883,11 +968,19 @@ function renderProfile(){
       lt && { k:'맞라인', v:`${(lw/lt*100).toFixed(0)}%`, sub:`${lw}승 ${lt-lw}패`, t: lw/lt >= .5 ? 'good' : 'bad', title:`같은 포지션 상대보다 ${laneCol}이 많았던 경기 비율` }
     ].filter(Boolean);
 
-    const order = [...POS_ORDER].sort((a,b) => (S.pos[b]?.g||0) - (S.pos[a]?.g||0));
+    // 전체 보기에서는 포지션_분석 탭 값을 그대로, 최근 20경기·챔피언 검색 중에는 경기 기록으로 계산
+    const fromSheet = POS[P.name] && state.range === 'all' && !state.pChamp;
+    const PS = {};
+    POS_ORDER.forEach(x => {
+      if(fromSheet){ const v = POS[P.name][x]; PS[x] = v ? { g:v.g, w:v.w, kda:v.kdaN ? v.kdaW/v.kdaN : null, ai:v.aiN ? v.aiW/v.aiN : null } : { g:0, w:0, kda:null, ai:null }; }
+      else { const v = S.pos[x]; PS[x] = v ? { g:v.g, w:v.w, kda:kda(v.k,v.d,v.a), ai:v.sc/v.g } : { g:0, w:0, kda:null, ai:null }; }
+    });
+    const totalG = POS_ORDER.reduce((a,x)=>a+PS[x].g,0) || 1;
+    const order = [...POS_ORDER].sort((a,b) => PS[b].g - PS[a].g);
     const posCols = POS_ORDER.map(x => {
-      const v = S.pos[x] || {g:0,w:0};
+      const v = PS[x];
       const cls = v.g && x === order[0] ? 'p1' : v.g && x === order[1] ? 'p2' : '';
-      return `<div class="pt-col ${cls}"><span class="pt-h">${x}</span><span>${(v.g/S.g*100).toFixed(1)}%</span><span>${v.g ? pct(v.w,v.g).toFixed(1)+'%' : '0%'}</span><span>${v.g}</span></div>`;
+      return `<div class="pt-col ${cls}"><span class="pt-h">${x}</span><span>${(v.g/totalG*100).toFixed(1)}%</span><span>${v.g ? pct(v.w,v.g).toFixed(1)+'%' : '-'}</span><span>${v.g}</span><span>${v.g && v.kda!=null ? v.kda.toFixed(2) : '-'}</span><span>${v.g && v.ai!=null ? v.ai.toFixed(1) : '-'}</span></div>`;
     }).join('');
 
     summary = `<div class="sum-grid">
@@ -904,7 +997,7 @@ function renderProfile(){
         ${S.champList.slice(0,3).map(c => `<div class="mc">${ci(c.name,34)}<span class="t"><b style="color:${rateColor(c.rate)}">${c.rate.toFixed(0)}%</b> <span class="sub">(${c.w}승 ${c.g-c.w}패)</span></span><span class="sub ${kdaCls(c.kda)}">${c.kda.toFixed(2)} KDA</span></div>`).join('')}
       </div>
       <div class="scard"><h4>포지션 분포</h4>
-        <div class="ptable"><div class="pt-col pt-lab"><span class="pt-h">&nbsp;</span><span>비율</span><span>승률</span><span>게임수</span></div>${posCols}</div>
+        <div class="ptable"><div class="pt-col pt-lab"><span class="pt-h">&nbsp;</span><span>비율</span><span>승률</span><span>게임수</span><span>KDA</span><span>${SCORE_NAME()}</span></div>${posCols}</div>
       </div>
     </div>`;
   }
@@ -916,8 +1009,7 @@ function renderProfile(){
       <span class="av">${ci(P.main, 72)}<span class="lv">${rank>=0?`${rank+1}위`:`${P.g}전`}</span></span>
       <div><h1>${tagged(REG.has(P.name) ? DISP[P.name] : (accountsOf(P.name)[0]?.[0] || P.name))}</h1>
         <div class="sub">${P.g}전 ${P.w}승 ${P.g-P.w}패, 승률 ${P.rate.toFixed(0)}%, 최장 ${P.streak}연승</div>
-        ${MMR[P.name] ? (() => { const M = MMR[P.name], nt = nextTier(M.mmr);
-          return `<div class="mmr-line">${tierBadge(M.tier, M.mmr)}${M.rank ? `<span class="sub">MMR ${M.rank}위</span>` : ''}${nt ? `<span class="mmr-next"><span class="track"><i style="width:${Math.max(4, Math.min(100, (M.mmr-nt.from)/(nt.to-nt.from)*100))}%;background:${tierColor(nt.name)}"></i></span><span class="sub">${esc(nt.name)}까지 ${nt.left}</span></span>` : ''}</div>`; })() : ''}
+        ${MMR[P.name] ? tierBlock(MMR[P.name]) : ''}
         ${accountsOf(P.name).length > 1 ? `<div class="accts"><button class="acct-toggle" data-accts aria-expanded="${state.showAccts}">롤 계정 ${accountsOf(P.name).length}개 ${ICON_DOWN}</button>
           ${state.showAccts ? `<div class="acct-list">${accountsOf(P.name).map(([a,n])=>`<span class="acct">${tagged(a)} <span class="sub">${n}전</span></span>`).join('')}</div>` : ''}</div>` : ''}
         <div class="hero-meta">${POS_ORDER.filter(x=>P.pos[x]).sort((a,b)=>P.pos[b].g-P.pos[a].g).slice(0,2).map(x=>`<span class="pos-chip">${x}</span>`).join('')}</div>
@@ -1008,18 +1100,18 @@ function toCsvUrl(url){
   if(CONFIG.SHEET_NAME) out += `&sheet=${encodeURIComponent(CONFIG.SHEET_NAME)}`; else if(gid) out += `&gid=${gid}`;
   return out;
 }
-// Apps Script 창구면 ?tab=mmr, 시트 주소면 MMR_SHEET 탭을 읽어요. 실패해도 나머지 화면은 그대로 떠요
-async function loadMmr(url){
-  let mu = null;
-  if(/script\.google\.com/.test(url)) mu = url + (url.includes('?')?'&':'?') + 'tab=mmr';
-  else if(CONFIG.MMR_SHEET && /\/spreadsheets\/d\//.test(url)) mu = url.replace(/&(sheet|gid)=[^&]*/g,'') + '&sheet=' + encodeURIComponent(CONFIG.MMR_SHEET);
-  if(!mu) return null;
+// Apps Script 창구에서 추가 탭(mmr: 심콩_랭킹, pos: 포지션_분석)을 불러와요. 실패해도 나머지 화면은 그대로 떠요
+async function loadTab(url, tab, parse){
+  let u = null;
+  if(/script\.google\.com/.test(url)) u = url + (url.includes('?')?'&':'?') + 'tab=' + tab;
+  else if(tab === 'mmr' && CONFIG.MMR_SHEET && /\/spreadsheets\/d\//.test(url)) u = url.replace(/&(sheet|gid)=[^&]*/g,'') + '&sheet=' + encodeURIComponent(CONFIG.MMR_SHEET);
+  if(!u) return null;
   try{
-    const res = await fetch(mu + '&t=' + Date.now());
+    const res = await fetch(u + '&t=' + Date.now());
     if(!res.ok) return null;
     const text = await res.text();
-    return /^error/i.test(text) ? null : parseMmr(text);
-  }catch(e){ console.warn('[내전 기록] MMR 탭을 불러오지 못했어요', e); return null; }
+    return /^error/i.test(text) ? null : parse(text);
+  }catch(e){ console.warn('[내전 기록] ' + tab + ' 탭을 불러오지 못했어요', e); return null; }
 }
 async function load(){
   const icons = loadIcons();
@@ -1034,7 +1126,7 @@ async function load(){
       const res = await fetch(url + (url.includes('?')?'&':'?') + 't=' + Date.now());
       if(!res.ok) throw new Error(`시트를 불러오지 못했어요 (HTTP ${res.status}). 시트 공유가 '링크가 있는 모든 사용자'로 되어 있는지 확인하세요.`);
       state.rows = normalize(parseCSV(await res.text())); setNotice('');
-      MMR_RAW = await loadMmr(url);
+      [MMR_RAW, POS_RAW] = await Promise.all([loadTab(url, 'mmr', parseMmr), loadTab(url, 'pos', parsePos)]);
     }catch(e){
       state.rows = [];
       const msg = e instanceof TypeError
@@ -1044,7 +1136,7 @@ async function load(){
       console.error('[내전 기록] 시트 요청 실패:', url, e);
     }
   }
-  buildMatches(); buildNames(); buildMmr(); render();
+  buildMatches(); buildNames(); buildMmr(); buildPos(); render();
   await icons; render();
 }
 
