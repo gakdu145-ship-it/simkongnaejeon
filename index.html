@@ -363,6 +363,7 @@ td.tier-cell .emb{vertical-align:middle}
    매핑되지 않은 숫자 컬럼(딜량, 골드 등)은 부문별 1위에 자동 추가됩니다
    ============================================================ */
 const CONFIG = {
+  GA_ID: 'G-0KDGZ7NQEJ',            // 방문 통계: Google Analytics 측정 ID (G-로 시작). 비우면 수집 안 함
   CSV_URL: 'https://script.google.com/macros/s/AKfycbzxbEVgSwnZJzPH86_eOsAlPxCcqJHu2DeWvsfRu6fUjVn-67ZfRpBrdBje4Ah6C3Lo/exec',
   SHEET_NAME: '',         // 기록 탭 이름. 비우면 첫 번째 탭
   START_MMR: 2000,        // 모든 유저의 시작 MMR (여기에 경기별 MMR 변화량을 더해요)
@@ -1105,8 +1106,21 @@ function renderBalance(){
   </div>`;
 }
 
+/* ---------- 방문 통계 (Google Analytics 4) ----------
+   페이지를 열 때마다 page_view 1회 (광고 PV는 보통 이 값 기준)
+   탭 전환은 주소가 안 바뀌어서 따로 이벤트로 셉니다: tab_rank, tab_profile, tab_champs, tab_balance */
+if(CONFIG.GA_ID){
+  const s = document.createElement('script'); s.async = true;
+  s.src = 'https://www.googletagmanager.com/gtag/js?id=' + CONFIG.GA_ID; document.head.appendChild(s);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function(){ dataLayer.push(arguments); };
+  gtag('js', new Date()); gtag('config', CONFIG.GA_ID);
+}
+let lastTab;
+
 /* ---------- 렌더 ---------- */
 function render(){
+  if(state.tab !== lastTab){ lastTab = state.tab; window.gtag?.('event', 'tab_' + state.tab); }
   const players = new Set(state.rows.map(r=>r.player)).size;
   $('#summary').textContent = MATCHES.length ? `${players}명, ${MATCHES.length}경기` : '';
   document.querySelectorAll('nav button').forEach(b => b.setAttribute('aria-selected', b.dataset.tab===state.tab));
